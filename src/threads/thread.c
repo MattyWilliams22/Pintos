@@ -353,7 +353,7 @@ thread_set_priority (int new_priority)
   thread_current ()->priority = new_priority;
   
   // Only works if ready_list is sorted by priority
-  if (list_entry(list_front(&ready_list), struct thread, elem)->priority > new_priority) {
+  if (list_entry(list_front(&ready_list), struct thread, elem)->priority > thread_get_priority()) {
     thread_yield();
   }
 }
