@@ -107,6 +107,10 @@ struct thread
    Controlled by kernel command-line option "mlfqs". */
 extern bool thread_mlfqs;
 
+bool sort_threads_by_priority(const struct list_elem *a_,
+                                               const struct list_elem *b_,
+                                               void *aux UNUSED);
+
 void thread_init (void);
 void thread_start (void);
 size_t threads_ready(void);
