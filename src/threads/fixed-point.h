@@ -14,6 +14,7 @@ fixed_point mult_fixed_point(fixed_point x, fixed_point y);
 fixed_point mult_fixed_point_by_int(fixed_point x, int n);
 fixed_point div_fixed_point(fixed_point x, fixed_point y);
 fixed_point div_fixed_point_by_int(fixed_point x, int n);
+
 /* Converts an integer to a fixed-point number. */
 fixed_point int_to_fixed_point(int n) {
     return n * f;

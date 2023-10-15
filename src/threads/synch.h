@@ -30,10 +30,6 @@ bool lock_try_acquire (struct lock *);
 void lock_release (struct lock *);
 bool lock_held_by_current_thread (const struct lock *);
 
-bool sort_semaphores_by_top_priority(const struct list_elem *a_,
-                                               const struct list_elem *b_,
-                                               void *aux);
-
 /* Condition variable. */
 struct condition 
   {
