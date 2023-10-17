@@ -39,22 +39,12 @@ struct semaphore_elem
     struct semaphore semaphore;         /* This semaphore. */
   };
 
-/*  Compare two threads based on their priority value.
-    Return true if the priority of thread a is 
-    greater than the priority of thread b. */
-static bool sort_threads_by_priority(const struct list_elem *a_,
-                                               const struct list_elem *b_,
-                                               void *aux UNUSED) {
-  struct thread *a = list_entry(a_, struct thread, elem);
-  struct thread *b = list_entry(b_, struct thread, elem);
-  return a->priority > b->priority;
-}
-
 /*  Compare two semaphores based on the priority of their highest priority threads.
     Return true if semaphore a contains a thread with priority greater than the
     priority of all threads in semaphore b.
     Assume the waiters of both semaphores are sorted by priority, descending. */
-static bool sort_semaphores_by_top_priority(const struct list_elem *a_,
+static bool 
+sort_semaphores_by_top_priority(const struct list_elem *a_,
                                                const struct list_elem *b_,
                                                void *aux UNUSED) {
   struct semaphore_elem *a__ = list_entry(a_, struct semaphore_elem, elem);

@@ -71,6 +71,27 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+/*  Compare two threads based on their priority value.
+    Return true if the priority of thread a is 
+    greater than the priority of thread b. */
+bool 
+sort_threads_by_priority(const struct list_elem *a_,
+                                               const struct list_elem *b_,
+                                               void *aux UNUSED) {
+  struct thread *a = list_entry(a_, struct thread, elem);
+  struct thread *b = list_entry(b_, struct thread, elem);
+  return a->priority > b->priority;
+}
+
+/* The priority of the current thread is checked against other,
+   If other has a higher priority, then the current thread yields. */
+void
+yield_if_necessary(struct thread *other) {
+  if (other->priority > thread_current()->priority) {
+    thread_yield();
+  }
+}
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -216,6 +237,10 @@ thread_create (const char *name, int priority,
   /* Add to run queue. */
   thread_unblock (t);
 
+  /* Checks if t has a higher priority than running thread.
+     Yields if it does. */
+  yield_if_necessary(t);
+
   return tid;
 }
 
@@ -252,7 +277,11 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  /* Inserts thread into ready list incorrect place based on priority, descending.
+     Checks if thread t has a higher priority than current thread, if so, yields CPU. */
+  list_insert_ordered(&ready_list, &t->elem, sort_threads_by_priority, NULL);
+  yield_if_necessary(t);
+
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
