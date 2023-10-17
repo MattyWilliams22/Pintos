@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -159,8 +160,16 @@ thread_tick (void)
   else if (t->pagedir != NULL)
     user_ticks++;
 #endif
-  else
+  else {
     kernel_ticks++;
+    t->recent_cpu++;
+  }
+
+  if (timer_ticks() % TIMER_FREQ == 0) {
+    update_load_avg();
+    update_recent_cpu();
+    update_priority();
+  }
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
@@ -398,31 +407,81 @@ thread_get_priority (void)
 void
 thread_set_nice (int nice UNUSED) 
 {
-  /* Not yet implemented. */
+  thread_current()->nice = nice;
+  update_priority();
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return fixed_point_to_int_nearest(100 * thread_current()->load_avg); 
+}
+
+/* Updates the load_avg. */ 
+void 
+update_load_avg (void) 
+{
+  fixed_point_t a = mult_fixed_point(16110, thread_current()->load_avg);
+  fixed_point_t b = mult_fixed_point(273, get_ready_threads());
+  thread_current()->load_avg = add_fixed_point(a, b);
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  int load_avg = thread_get_load_avg();
+  return (2 * load_avg) / (2 * load_avg + 1) * thread_get_recent_cpu() + thread_get_nice();
+}
+
+/* Updates the load_avg. */ 
+void 
+update_recent_cpu (void) 
+{
+  fixed_point_t load_avg = thread_current()->load_avg;
+  fixed_point_t double_load_avg = mult_fixed_point_by_int(load_avg, 2);
+  fixed_point_t x = add_int_to_fixed_point(double_load_avg, 1);
+  fixed_point_t y = div_fixed_point(double_load_avg, x);
+  fixed_point_t z = mult_fixed_point(y, thread_current()->recent_cpu);
+  thread_current()->recent_cpu = z;
+}
+
+/* Returns the running threads new priority value. */
+void
+update_priority (void) {
+  fixed_point_t x = div_fixed_point_by_int(thread_current()->recent_cpu, 4);
+  int y = thread_current()->nice * 2;
+  fixed_point_t z = sub_int_from_fixed_point(x, PRI_MAX);
+  fixed_point_t a = add_int_to_fixed_point(z, y);
+  thread_current()->priority = a;
+}
+
+/* Returns the number of threads ready to run or running. */
+int 
+get_ready_threads (void) {
+  int count = 0;
+
+  /* Count number of ready threads. */
+  for (struct list_elem *e = list_begin (&ready_list);
+       e != list_end (&ready_list); list_next(e))
+  {
+    count++;
+  }
+
+  /* Add current thread if it is in the running state. */
+  if (thread_current()->status == THREAD_RUNNING) {
+    count++;
+  }
+
+  return count;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.

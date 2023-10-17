@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/fixed-point.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -88,6 +89,9 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    int nice;                           /* Niceness. */
+    fixed_point_t recent_cpu;             /* Recent CPU value for BSD Scheduler. */
+    fixed_point_t load_avg;               /* Load Average for BSD Sceduler. */
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
@@ -143,5 +147,9 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+void update_priority (void);
+void update_recent_cpu (void);
+void update_load_avg (void);
+int get_ready_threads (void);
 
 #endif /* threads/thread.h */
