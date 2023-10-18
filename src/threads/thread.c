@@ -80,14 +80,14 @@ sort_threads_by_priority(const struct list_elem *a_,
                                                void *aux UNUSED) {
   struct thread *a = list_entry(a_, struct thread, elem);
   struct thread *b = list_entry(b_, struct thread, elem);
-  return a->priority > b->priority;
+  return a->effective_priority > b->effective_priority;
 }
 
 /* The priority of the current thread is checked against other,
    If other has a higher priority, then the current thread yields. */
 void
 yield_if_necessary(struct thread *other) {
-  if (other->priority > thread_current()->priority) {
+  if (other->effective_priority > thread_current()->effective_priority) {
     thread_yield();
   }
 }
@@ -391,7 +391,7 @@ thread_set_priority (int new_priority)
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  return thread_current ()->effective_priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -511,6 +511,7 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->effective_priority = priority;
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
