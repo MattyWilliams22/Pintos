@@ -25,6 +25,9 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/* Multilevel feedback queue. Array of pointers to lists of threads. */
+static struct list *multilevel_queue[64];
+
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
@@ -93,6 +96,23 @@ yield_if_necessary(struct thread *other) {
   }
 }
 
+void
+init_multilevel_queue (void) {
+  for (int i = PRI_MIN; i <= PRI_MAX; i++) {
+    list_init(multilevel_queue[i]);
+  }
+}
+
+struct thread *
+find_next_multilevel_thread (void) {
+  for (int i = PRI_MAX; i >= PRI_MIN; i--) {
+    if (!list_empty(multilevel_queue[i])) {
+      return list_entry(list_front(multilevel_queue[i]), struct thread, elem);
+    }
+  }
+  return idle_thread;
+}
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -112,7 +132,11 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
-  list_init (&ready_list);
+  if (thread_mlfqs) {
+    init_multilevel_queue();
+  } else {
+    list_init (&ready_list);
+  }
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -143,7 +167,14 @@ thread_start (void)
 size_t
 threads_ready (void)
 {
-  return list_size (&ready_list);      
+  if (thread_mlfqs) {
+    int cnt = 0;
+    for (int i = PRI_MIN; i <= PRI_MAX; i++) {
+      cnt += list_size (multilevel_queue[i]);
+    }
+    return cnt;
+  }
+  return list_size (&ready_list);   
 }
 
 /* Called by the timer interrupt handler at each timer tick.
@@ -165,7 +196,7 @@ thread_tick (void)
     t->recent_cpu++;
   }
 
-  if (timer_ticks() % TIMER_FREQ == 0) {
+  if (timer_ticks() % TIMER_FREQ == 0 && thread_mlfqs) {
     update_load_avg();
     update_recent_cpu();
     update_priority();
@@ -286,9 +317,16 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  /* Inserts thread into ready list incorrect place based on priority, descending.
+
+  if (thread_mlfqs) {
+    /* Inserts thread to back of correct list based on priority. */
+    list_push_back(multilevel_queue[t->priority], &t->elem);
+  } else {
+    /* Inserts thread into ready list in correct place based on priority, descending.
      Checks if thread t has a higher priority than current thread, if so, yields CPU. */
-  list_insert_ordered(&ready_list, &t->elem, sort_threads_by_priority, NULL);
+    list_insert_ordered(&ready_list, &t->elem, sort_threads_by_priority, NULL);
+  }
+  
   yield_if_necessary(t);
 
   t->status = THREAD_READY;
@@ -360,8 +398,13 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+  if (cur != idle_thread) {
+    if (thread_mlfqs) {
+      list_push_back (multilevel_queue[cur->priority], &cur->elem);
+    } else {
+      list_insert_ordered (&ready_list, &cur->elem, sort_threads_by_priority, NULL);
+    }
+  } 
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -390,9 +433,12 @@ thread_set_priority (int new_priority)
 {
   thread_current ()->priority = new_priority;
   
-  // Only works if ready_list is sorted by priority
-  if (list_entry(list_front(&ready_list), struct thread, elem)->priority > thread_get_priority()) {
-    thread_yield();
+  if (thread_mlfqs) {
+    struct thread *highest_ready = find_next_multilevel_thread();
+    yield_if_necessary(highest_ready);
+  } else {
+    struct thread *highest_ready = list_entry(list_front(&ready_list), struct thread, elem);
+    yield_if_necessary(highest_ready);
   }
 }
 
@@ -430,7 +476,7 @@ void
 update_load_avg (void) 
 {
   fixed_point_t a = mult_fixed_point(16110, thread_current()->load_avg);
-  fixed_point_t b = mult_fixed_point(273, get_ready_threads());
+  fixed_point_t b = mult_fixed_point(273, threads_ready());
   thread_current()->load_avg = add_fixed_point(a, b);
 }
 
@@ -462,26 +508,6 @@ update_priority (void) {
   fixed_point_t z = sub_int_from_fixed_point(x, PRI_MAX);
   fixed_point_t a = add_int_to_fixed_point(z, y);
   thread_current()->priority = a;
-}
-
-/* Returns the number of threads ready to run or running. */
-int 
-get_ready_threads (void) {
-  int count = 0;
-
-  /* Count number of ready threads. */
-  for (struct list_elem *e = list_begin (&ready_list);
-       e != list_end (&ready_list); list_next(e))
-  {
-    count++;
-  }
-
-  /* Add current thread if it is in the running state. */
-  if (thread_current()->status == THREAD_RUNNING) {
-    count++;
-  }
-
-  return count;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -598,10 +624,19 @@ alloc_frame (struct thread *t, size_t size)
 static struct thread *
 next_thread_to_run (void) 
 {
-  if (list_empty (&ready_list))
+  if (thread_mlfqs) {
+    for (int i = PRI_MAX; i >= PRI_MIN; i++) {
+      if (!list_empty (multilevel_queue[i])) {
+        return list_entry (list_pop_front (multilevel_queue[i]), struct thread, elem);
+      }
+    }
     return idle_thread;
-  else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  } else {
+    if (list_empty (&ready_list))
+      return idle_thread;
+    else
+      return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  }
 }
 
 /* Completes a thread switch by activating the new thread's page

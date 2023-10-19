@@ -90,8 +90,8 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     int nice;                           /* Niceness. */
-    fixed_point_t recent_cpu;             /* Recent CPU value for BSD Scheduler. */
-    fixed_point_t load_avg;               /* Load Average for BSD Sceduler. */
+    fixed_point_t recent_cpu;           /* Recent CPU value for BSD Scheduler. */
+    fixed_point_t load_avg;             /* Load Average for BSD Sceduler. */
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
@@ -115,6 +115,8 @@ bool sort_threads_by_priority(const struct list_elem *a_,
                                                const struct list_elem *b_,
                                                void *aux UNUSED);
 void yield_if_necessary(struct thread *other);
+void init_multilevel_queue (void);
+struct thread *find_next_multilevel_thread (void);
 
 void thread_init (void);
 void thread_start (void);
