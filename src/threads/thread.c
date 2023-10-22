@@ -84,14 +84,14 @@ sort_threads_by_priority(const struct list_elem *a_,
                                                void *aux UNUSED) {
   struct thread *a = list_entry(a_, struct thread, elem);
   struct thread *b = list_entry(b_, struct thread, elem);
-  return a->priority > b->priority;
+  return a->effective_priority > b->effective_priority;
 }
 
 /* The priority of the current thread is checked against other,
    If other has a higher priority, then the current thread yields. */
 void
 yield_if_necessary(struct thread *other) {
-  if (other->priority > thread_current()->priority) {
+  if (other->effective_priority > thread_current()->effective_priority) {
     thread_yield();
   }
 }
@@ -327,8 +327,6 @@ thread_unblock (struct thread *t)
     list_insert_ordered(&ready_list, &t->elem, sort_threads_by_priority, NULL);
   }
   
-  yield_if_necessary(t);
-
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -427,26 +425,71 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
+void update_priorities(struct thread *t, struct lock *l) 
+{
+  ASSERT(intr_get_level() == INTR_OFF);
+
+  while (true) 
+  {
+    int max = t ? t->priority : PRI_MIN;
+    struct list_elem *e = t ? list_begin(&t->owned_locks) : list_begin(&l->semaphore.waiters);
+
+    for (; e != (t ? list_end(&t->owned_locks) : list_end(&l->semaphore.waiters)); e = list_next(e)) 
+    {
+      int pri = t ? list_entry(e, struct lock, elem)->effective_priority : list_entry(e, struct thread, elem)->effective_priority;
+      if (max < pri) max = pri;
+    }
+
+    if (t) 
+    {
+      t->effective_priority = max;
+      if (t->status == THREAD_READY) 
+      {
+        list_remove(&t->elem);
+        list_insert_ordered(&ready_list, &t->elem, sort_threads_by_priority, NULL);
+      }
+      if (!(l = t->required_lock)) break;
+      t = NULL;
+    } 
+    else 
+    {
+      l->effective_priority = max;
+      if (!(t = l->holder)) break;
+      l = NULL;
+    }
+  }
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
-  
-  if (thread_mlfqs) {
-    struct thread *highest_ready = find_next_multilevel_thread();
-    yield_if_necessary(highest_ready);
-  } else {
-    struct thread *highest_ready = list_entry(list_front(&ready_list), struct thread, elem);
-    yield_if_necessary(highest_ready);
-  }
+  ASSERT (!thread_mlfqs);
+
+  struct thread *t = thread_current ();
+  if (t->priority != new_priority)
+    {
+      enum intr_level old_level = intr_disable ();
+      t->priority = new_priority;
+      update_priorities (t, NULL);
+      intr_set_level (old_level);
+
+      /* This operation might cause other threads to preempt. */
+      if (t->effective_priority < find_next_multilevel_thread ()->effective_priority)
+        {
+          if (intr_context ())
+            intr_yield_on_return ();
+          else
+            thread_yield ();
+        }
+    }
 }
 
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  return thread_current ()->effective_priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -596,6 +639,9 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->effective_priority = priority;
+  list_init (&t->owned_locks);
+  t->required_lock = NULL;
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
