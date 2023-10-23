@@ -92,7 +92,6 @@ struct thread
   int effective_priority;             /* Effective priority. */
   int nice;                           /* Niceness. */
   fixed_point_t recent_cpu;           /* Recent CPU value for BSD Scheduler. */
-  fixed_point_t load_avg;             /* Load Average for BSD Sceduler. */
   struct list_elem allelem;           /* List element for all threads list. */
   struct list owned_locks;
   struct lock *required_lock;
@@ -152,11 +151,12 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
-void update_priority (void);
-void update_recent_cpu (void);
+void update_priority_bsd (struct thread *t, void *aux UNUSED);
+void update_recent_cpu (struct thread *t, void *aux UNUSED);
 void update_load_avg (void);
 int get_ready_threads (void);
 
 void update_priorities (struct thread *, struct lock *);
+int thread_max_priority (void);
 
 #endif /* threads/thread.h */
