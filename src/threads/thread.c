@@ -436,7 +436,7 @@ thread_yield (void)
   old_level = intr_disable ();
   if (cur != idle_thread) {
     if (thread_mlfqs) {
-      list_push_back (&multilevel_queue[cur->effective_priority], &cur->elem);
+      list_push_back (&multilevel_queue[cur->priority], &cur->elem);
     } else {
       list_insert_ordered (&ready_list, &cur->elem, sort_threads_by_priority, NULL);
     }
@@ -614,7 +614,7 @@ update_priority_bsd (struct thread *t, void *aux UNUSED) {
   t->priority = new_priority;
   if (t->status == THREAD_READY) {
     list_remove(&t->elem);
-    list_insert_ordered(&ready_list, &t->elem, sort_threads_by_priority, NULL);
+    list_push_back (&multilevel_queue[t->priority], &t->elem);
   }
 }
 
