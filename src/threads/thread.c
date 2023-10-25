@@ -440,7 +440,7 @@ thread_yield (void)
     } else {
       list_insert_ordered (&ready_list, &cur->elem, sort_threads_by_priority, NULL);
     }
-  } 
+  }
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -611,8 +611,9 @@ update_priority_bsd (struct thread *t, void *aux UNUSED) {
     new_priority = PRI_MIN;
   }
 
+  int old_priority = t->priority;
   t->priority = new_priority;
-  if (t->status == THREAD_READY) {
+  if (t->status == THREAD_READY && old_priority != new_priority) {
     list_remove(&t->elem);
     list_push_back (&multilevel_queue[t->priority], &t->elem);
   }
@@ -738,7 +739,7 @@ static struct thread *
 next_thread_to_run (void) 
 {
   if (thread_mlfqs) {
-    for (int i = PRI_MAX; i >= PRI_MIN; i++) {
+    for (int i = PRI_MAX; i >= PRI_MIN; i--) {
       if (!list_empty (&multilevel_queue[i])) {
         return list_entry (list_pop_front (&multilevel_queue[i]), struct thread, elem);
       }
