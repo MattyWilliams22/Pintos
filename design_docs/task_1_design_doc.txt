@@ -107,6 +107,41 @@ effective synchronization management.
 >> global or static variable, `typedef', or enumeration. 
 >> Identify the purpose of each in roughly 25 words.
 
+struct thread
+{
+  /* Owned by thread.c. */
+  tid_t tid;                          /* Thread identifier. */
+  enum thread_status status;          /* Thread state. */
+  char name[16];                      /* Name (for debugging purposes). */
+  uint8_t *stack;                     /* Saved stack pointer. */
+  int priority;                       /* Priority. */
+  int effective_priority;             /* Effective priority. */
+  int nice;                           /* Niceness. */
+  fixed_point_t recent_cpu;           /* Recent CPU value for BSD Scheduler. */
+  struct list_elem allelem;           /* List element for all threads list. */
+  struct list owned_locks;
+  struct lock *required_lock;
+
+  /* Shared between thread.c and synch.c. */
+  struct list_elem elem;              /* List element. */
+
+#ifdef USERPROG
+    /* Owned by userprog/process.c. */
+    uint32_t *pagedir;                  /* Page directory. */
+#endif
+
+  /* Owned by thread.c. */
+  unsigned magic;                     /* Detects stack overflow. */
+};
+
+Added nice integer which stores thread's niceness and recent_cpu fixed point number to store the amount of recent CPU time the thread has had.
+
+
+static struct list multilevel_queue[64];
+
+Is an array of 64 lists, with each list storing a queue of ready threads with the corresponding priority level.
+
+
 ---- ALGORITHMS ----
 
 >> B2: (3 marks)
@@ -118,24 +153,33 @@ effective synchronization management.
 timer  recent_cpu    priority   thread
 ticks   A   B   C   A   B   C   to run
 -----  --  --  --  --  --  --   ------
- 0
- 4
- 8
-12
-16
-20
-24
-28
-32
-36
+ 0      0   0   0   64  62  59     A   
+ 4      4   0   0   62  61  59     A
+ 8      8   0   0   61  61  59     B
+12      8   4   0   61  60  59     A
+16      12  4   0   60  60  59     B
+20      12  8   0   60  59  59     A
+24      16  8   0   59  59  59     C
+28      16  8   4   59  59  58     B
+32      16  12  4   59  58  58     A
+36      20  12  4   58  58  58     C
+
 
 >> B3: (2 marks) 
 >> Did any ambiguities in the scheduler specification make values in the table 
 >> uncertain? 
 >> If so, what rule did you use to resolve them?
 
+It was unclear from the specification if priority values ending with .5 should be rounded up or down.
+For this table we decided to round up as this is the standard mathematical definition of rounding.
+
 ---- RATIONALE ----
 
 >> B4: (3 marks)
 >> Briefly critique your design, pointing out advantages and disadvantages in 
 >> your design choices.
+
+
+
+We decided to use a fixed length array of lists to store the multilevel feedback queue for the bsd scheduler. 
+This structure is less space efficient than a single list, however it is much faster to read from and write to.
