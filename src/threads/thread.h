@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/fixed-point.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -81,31 +82,43 @@ typedef int tid_t;
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
 struct thread
-  {
-    /* Owned by thread.c. */
-    tid_t tid;                          /* Thread identifier. */
-    enum thread_status status;          /* Thread state. */
-    char name[16];                      /* Name (for debugging purposes). */
-    uint8_t *stack;                     /* Saved stack pointer. */
-    int priority;                       /* Priority. */
-    struct list_elem allelem;           /* List element for all threads list. */
+{
+  /* Owned by thread.c. */
+  tid_t tid;                          /* Thread identifier. */
+  enum thread_status status;          /* Thread state. */
+  char name[16];                      /* Name (for debugging purposes). */
+  uint8_t *stack;                     /* Saved stack pointer. */
+  int priority;                       /* Priority. */
+  int effective_priority;             /* Effective priority. */
+  int nice;                           /* Niceness. */
+  fixed_point_t recent_cpu;           /* Recent CPU value for BSD Scheduler. */
+  struct list_elem allelem;           /* List element for all threads list. */
+  struct list owned_locks;
+  struct lock *required_lock;
 
-    /* Shared between thread.c and synch.c. */
-    struct list_elem elem;              /* List element. */
+  /* Shared between thread.c and synch.c. */
+  struct list_elem elem;              /* List element. */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
 
-    /* Owned by thread.c. */
-    unsigned magic;                     /* Detects stack overflow. */
-  };
+  /* Owned by thread.c. */
+  unsigned magic;                     /* Detects stack overflow. */
+};
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "mlfqs". */
 extern bool thread_mlfqs;
+
+bool sort_threads_by_priority(const struct list_elem *a_,
+                                               const struct list_elem *b_,
+                                               void *aux UNUSED);
+void yield_if_necessary(struct thread *other);
+void init_multilevel_queue (void);
+struct thread *find_next_multilevel_thread (void);
 
 void thread_init (void);
 void thread_start (void);
@@ -138,5 +151,12 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+void update_priority_bsd (struct thread *t, void *aux UNUSED);
+void update_recent_cpu (struct thread *t, void *aux UNUSED);
+void update_load_avg (void);
+int get_ready_threads (void);
+
+void update_priorities (struct thread *, struct lock *);
+int thread_max_priority (void);
 
 #endif /* threads/thread.h */

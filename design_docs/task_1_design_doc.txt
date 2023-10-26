@@ -1,0 +1,192 @@
+            +----------------------+
+            |        OS 211        |
+            |  TASK 1: SCHEDULING  |
+            |    DESIGN DOCUMENT   |
+            +----------------------+
+                   
+---- GROUP ----
+
+>> Fill in the names and email addresses of your group members.
+
+Matty Williams          mw2122@ic.ac.uk
+Kritik Pant             kp1222@ic.ac.uk
+Shivam Subudhi          ss4522@ic.ac.uk
+Atheepan Chandrakumaran ac4322@ic.ac.uk
+
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, or notes for the
+>> markers, please give them here.
+
+>> Please cite any offline or online sources you consulted while preparing your 
+>> submission, other than the Pintos documentation, course text, lecture notes 
+>> and course staff.
+
+None.
+
+             PRIORITY SCHEDULING
+             ===================
+
+---- DATA STRUCTURES ----
+
+>> A1: (2 marks) 
+>> Copy here the declaration of each new or changed `struct' or `struct' member,
+>> global or static variable, `typedef', or enumeration.  
+>> Identify the purpose of each in roughly 25 words.
+
+From thread.h:
+struct list owned_locks;
+struct lock *required_lock;
+
+struct list owned_locks: This field is a struct list from the Pintos operating 
+system's list data structure. It is used to maintain a list of locks that are 
+currently owned by the thread. When a thread successfully acquires a lock, 
+it adds that lock to its owned_locks list. This list allows the operating 
+system to track which locks are held by which threads. 
+This is useful for synchronization. 
+
+struct lock *required_lock: This field is a pointer to a lock structure. 
+It is used to represent the lock that the thread is currently waiting 
+to acquire. If a thread is in a blocked state because it is waiting for a lock 
+to become available, the required_lock field points to that specific lock. 
+This is important for knowing which lock a thread is blocked on and for 
+handling priority donation in certain scheduling scenarios.
+
+struct lock
+{
+  struct thread *holder;      /* Thread holding lock (for debugging). */
+  struct semaphore semaphore; /* Binary semaphore controlling access. */
+  int effective_priority;
+  struct list_elem elem;
+};
+
+int effective_priority: temporarily elevates a thread's priority to the highest 
+waiting thread's priority when acquiring a lock (priority donation).
+struct list_elem: elem organizes locks in lists for tracking lock ownership and 
+effective synchronization management.
+
+>> A2: (4 marks) 
+>> Draw a diagram that illustrates a nested donation in your structure and 
+>> briefly explain how this works.
+
+---- ALGORITHMS ----
+
+>> A3: (3 marks) 
+>> How do you ensure that the highest priority waiting thread wakes up first for
+>> a (i) semaphore, (ii) lock, or (iii) condition variable?
+
+>> A4: (3 marks)
+>> Describe the sequence of events when a call to lock_acquire() causes a 
+>> priority donation. 
+>> How is nested donation handled?
+
+>> A5: (3 marks)
+>> Describe the sequence of events when lock_release() is called on a lock that 
+>> a higher-priority thread is waiting for.
+
+---- SYNCHRONIZATION ----
+
+>> A6: (2 marks)
+>> How do you avoid a race condition in thread_set_priority() when a thread 
+>> needs to recompute its effective priority, but the donated priorities 
+>> potentially change during the computation?
+>> Can you use a lock to avoid the race?
+
+---- RATIONALE ----
+
+>> A7: (3 marks)
+>> Why did you choose this design?  
+>> In what ways is it superior to another design you considered?
+
+              ADVANCED SCHEDULER
+              ==================
+
+---- DATA STRUCTURES ----
+
+>> B1: (2 marks)
+>> Copy here the declaration of each new or changed `struct' or `struct' member,
+>> global or static variable, `typedef', or enumeration. 
+>> Identify the purpose of each in roughly 25 words.
+
+struct thread
+{
+  /* Owned by thread.c. */
+  tid_t tid;                          /* Thread identifier. */
+  enum thread_status status;          /* Thread state. */
+  char name[16];                      /* Name (for debugging purposes). */
+  uint8_t *stack;                     /* Saved stack pointer. */
+  int priority;                       /* Priority. */
+  int effective_priority;             /* Effective priority. */
+  int nice;                           /* Niceness. */
+  fixed_point_t recent_cpu;           /* Recent CPU value for BSD Scheduler. */
+  struct list_elem allelem;           /* List element for all threads list. */
+  struct list owned_locks;
+  struct lock *required_lock;
+
+  /* Shared between thread.c and synch.c. */
+  struct list_elem elem;              /* List element. */
+
+#ifdef USERPROG
+    /* Owned by userprog/process.c. */
+    uint32_t *pagedir;                  /* Page directory. */
+#endif
+
+  /* Owned by thread.c. */
+  unsigned magic;                     /* Detects stack overflow. */
+};
+
+Added nice integer which stores thread's niceness and recent_cpu fixed point number to store the amount of recent CPU time the thread has had.
+
+
+static struct list multilevel_queue[64];
+
+Is an array of 64 lists, with each list storing a queue of ready threads with the corresponding priority level.
+
+
+static fixed_point_t load_avg;
+
+Stores the fixed point representation of the moving average of threads ready to run.
+
+
+---- ALGORITHMS ----
+
+>> B2: (3 marks)
+>> Suppose threads A, B, and C have nice values 0, 1, and 2 and each has a 
+>> recent_cpu value of 0. 
+>> Fill in the table below showing the scheduling decision, the priority and the
+>> recent_cpu values for each thread after each given number of timer ticks:
+
+timer  recent_cpu    priority   thread
+ticks   A   B   C   A   B   C   to run
+-----  --  --  --  --  --  --   ------
+ 0      0   0   0   64  62  59     A   
+ 4      4   0   0   62  61  59     A
+ 8      8   0   0   61  61  59     B
+12      8   4   0   61  60  59     A
+16      12  4   0   60  60  59     B
+20      12  8   0   60  59  59     A
+24      16  8   0   59  59  59     C
+28      16  8   4   59  59  58     B
+32      16  12  4   59  58  58     A
+36      20  12  4   58  58  58     C
+
+
+>> B3: (2 marks) 
+>> Did any ambiguities in the scheduler specification make values in the table 
+>> uncertain? 
+>> If so, what rule did you use to resolve them?
+
+It was unclear from the specification if priority values ending with .5 should be rounded up or down.
+For this table we decided to round up as this is the standard mathematical definition of rounding.
+
+---- RATIONALE ----
+
+>> B4: (3 marks)
+>> Briefly critique your design, pointing out advantages and disadvantages in 
+>> your design choices.
+
+
+
+We decided to use a fixed length array of lists to store the multilevel feedback queue for the bsd scheduler. 
+This structure is less space efficient than a single list, however it is much faster to read from and write to.
