@@ -33,6 +33,37 @@ Atheepan Chandrakumaran ac4322@ic.ac.uk
 >> global or static variable, `typedef', or enumeration.  
 >> Identify the purpose of each in roughly 25 words.
 
+From thread.h:
+struct list owned_locks;
+struct lock *required_lock;
+
+struct list owned_locks: This field is a struct list from the Pintos operating 
+system's list data structure. It is used to maintain a list of locks that are 
+currently owned by the thread. When a thread successfully acquires a lock, 
+it adds that lock to its owned_locks list. This list allows the operating 
+system to track which locks are held by which threads. 
+This is useful for synchronization. 
+
+struct lock *required_lock: This field is a pointer to a lock structure. 
+It is used to represent the lock that the thread is currently waiting 
+to acquire. If a thread is in a blocked state because it is waiting for a lock 
+to become available, the required_lock field points to that specific lock. 
+This is important for knowing which lock a thread is blocked on and for 
+handling priority donation in certain scheduling scenarios.
+
+struct lock
+{
+  struct thread *holder;      /* Thread holding lock (for debugging). */
+  struct semaphore semaphore; /* Binary semaphore controlling access. */
+  int effective_priority;
+  struct list_elem elem;
+};
+
+int effective_priority: temporarily elevates a thread's priority to the highest 
+waiting thread's priority when acquiring a lock (priority donation).
+struct list_elem: elem organizes locks in lists for tracking lock ownership and 
+effective synchronization management.
+
 >> A2: (4 marks) 
 >> Draw a diagram that illustrates a nested donation in your structure and 
 >> briefly explain how this works.
