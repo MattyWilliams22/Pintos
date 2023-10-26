@@ -23,6 +23,8 @@ Atheepan Chandrakumaran ac4322@ic.ac.uk
 >> submission, other than the Pintos documentation, course text, lecture notes 
 >> and course staff.
 
+None.
+
              PRIORITY SCHEDULING
              ===================
 
@@ -140,6 +142,11 @@ Added nice integer which stores thread's niceness and recent_cpu fixed point num
 static struct list multilevel_queue[64];
 
 Is an array of 64 lists, with each list storing a queue of ready threads with the corresponding priority level.
+
+
+static fixed_point_t load_avg;
+
+Stores the fixed point representation of the moving average of threads ready to run.
 
 
 ---- ALGORITHMS ----

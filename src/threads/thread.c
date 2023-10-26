@@ -98,6 +98,7 @@ yield_if_necessary(struct thread *other) {
   }
 }
 
+/* Initialises the lists in the multilevel feedback queue. */
 void
 init_multilevel_queue (void) {
   for (int i = PRI_MIN; i <= PRI_MAX; i++) {
@@ -105,6 +106,9 @@ init_multilevel_queue (void) {
   }
 }
 
+/* Returns the first thread with the highest priority in the multilevel feedback queue.
+   Does not remove the thread from the queue. 
+   Returns idle_thread if no threads exist in the queue. */
 struct thread *
 find_next_multilevel_thread (void) {
   for (int i = PRI_MAX; i >= PRI_MIN; i--) {
@@ -115,6 +119,8 @@ find_next_multilevel_thread (void) {
   return idle_thread;
 }
 
+/* Returns the priority value of the thread with the greatest priority in 
+   the multilevel feedback queue. Disables interrupts while traversing queue. */ 
 int
 thread_max_priority (void)
 {
@@ -182,7 +188,9 @@ thread_start (void)
   sema_down (&idle_started);
 }
 
-/* Returns the number of threads currently in the ready list */
+/* Returns the number of threads currently in the ready list 
+   or the number of threads in the multilevel queue,
+   if the bsd scheduler is enabled. */
 size_t
 threads_ready (void)
 {
@@ -564,7 +572,7 @@ thread_get_nice (void)
 int
 thread_get_load_avg (void) 
 {
-  return fixed_point_to_int_nearest(mult_fixed_point(load_avg, 100));
+  return fixed_point_to_int_nearest(mult_fixed_point_by_int(load_avg, 100));
 }
 
 /* Updates the load_avg. */ 
@@ -574,7 +582,7 @@ update_load_avg (void)
   int num_ready = threads_ready ();
   if (thread_current () != idle_thread)
     num_ready++;
-  fixed_point_t a = div_fixed_point_by_int (mult_fixed_point(load_avg, 59), 60);
+  fixed_point_t a = div_fixed_point_by_int (mult_fixed_point_by_int(load_avg, 59), 60);
   fixed_point_t b = div_fixed_point_by_int (int_to_fixed_point(num_ready), 60);
   load_avg = add_fixed_point(a, b);
 }
@@ -583,10 +591,10 @@ update_load_avg (void)
 int
 thread_get_recent_cpu (void) 
 {
-  return fixed_point_to_int_nearest(mult_fixed_point(thread_current()->recent_cpu, 100));
+  return fixed_point_to_int_nearest(mult_fixed_point_by_int(thread_current()->recent_cpu, 100));
 }
 
-/* Updates the load_avg. */ 
+/* Updates the recent CPU value of thread t. */ 
 void 
 update_recent_cpu (struct thread *t, void *aux UNUSED) 
 {
@@ -594,9 +602,12 @@ update_recent_cpu (struct thread *t, void *aux UNUSED)
   fixed_point_t x = add_int_to_fixed_point(double_load_avg, 1);
   fixed_point_t y = div_fixed_point(double_load_avg, x);
   fixed_point_t z = mult_fixed_point(y, t->recent_cpu);
-  t->recent_cpu = z;
+  fixed_point_t a = add_int_to_fixed_point(z, t->nice);
+  t->recent_cpu = a;
 }
 
+/* Updates the priority of thread t, 
+   and moves it to the correct list in the multilevel feedback queue. */ 
 void
 update_priority_bsd (struct thread *t, void *aux UNUSED) {
 
@@ -614,7 +625,7 @@ update_priority_bsd (struct thread *t, void *aux UNUSED) {
   int old_priority = t->priority;
   t->priority = new_priority;
   if (t->status == THREAD_READY && old_priority != new_priority) {
-    list_remove(&t->elem);
+    list_remove (&t->elem);
     list_push_back (&multilevel_queue[t->priority], &t->elem);
   }
 }
