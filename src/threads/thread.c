@@ -128,7 +128,7 @@ thread_max_priority (void)
 
   int res = PRI_MIN - 1;
   for (int i = PRI_MAX; i >= PRI_MIN; i--)
-    if (!list_empty (&multilevel_queue[i - PRI_MIN]))
+    if (!list_empty (&multilevel_queue[i]))
       {
         res = i;
         break;
@@ -474,6 +474,8 @@ thread_foreach (thread_action_func *func, void *aux)
 void update_priorities(struct thread *t, struct lock *l) 
 {
   ASSERT(intr_get_level() == INTR_OFF);
+  ASSERT (t != NULL || l != NULL);
+  ASSERT (t == NULL || l == NULL);
 
   while (true) 
   {

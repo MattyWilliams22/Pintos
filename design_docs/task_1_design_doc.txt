@@ -35,9 +35,32 @@ None.
 >> global or static variable, `typedef', or enumeration.  
 >> Identify the purpose of each in roughly 25 words.
 
-From thread.h:
-struct list owned_locks;
-struct lock *required_lock;
+struct thread
+{
+  /* Owned by thread.c. */
+  tid_t tid;                          /* Thread identifier. */
+  enum thread_status status;          /* Thread state. */
+  char name[16];                      /* Name (for debugging purposes). */
+  uint8_t *stack;                     /* Saved stack pointer. */
+  int priority;                       /* Priority. */
+  int effective_priority;             /* Effective priority. */
+  int nice;                           /* Niceness. */
+  fixed_point_t recent_cpu;           /* Recent CPU value for BSD Scheduler. */
+  struct list_elem allelem;           /* List element for all threads list. */
+  struct list owned_locks;
+  struct lock *required_lock;
+
+  /* Shared between thread.c and synch.c. */
+  struct list_elem elem;              /* List element. */
+
+#ifdef USERPROG
+    /* Owned by userprog/process.c. */
+    uint32_t *pagedir;                  /* Page directory. */
+#endif
+
+  /* Owned by thread.c. */
+  unsigned magic;                     /* Detects stack overflow. */
+};
 
 struct list owned_locks: This field is a struct list from the Pintos operating 
 system's list data structure. It is used to maintain a list of locks that are 
@@ -63,8 +86,7 @@ struct lock
 
 int effective_priority: temporarily elevates a thread's priority to the highest 
 waiting thread's priority when acquiring a lock (priority donation).
-struct list_elem: elem organizes locks in lists for tracking lock ownership and 
-effective synchronization management.
+struct list_elem: elem for thread.owned_locks
 
 >> A2: (4 marks) 
 >> Draw a diagram that illustrates a nested donation in your structure and 
@@ -75,15 +97,35 @@ effective synchronization management.
 >> A3: (3 marks) 
 >> How do you ensure that the highest priority waiting thread wakes up first for
 >> a (i) semaphore, (ii) lock, or (iii) condition variable?
+i) when sema_up is called, we iterate through sema.waiters and the thread with the highest 
+priority is woken up
+ii) We do the same with locks - only waking up the thread with the highest priority in the waiters 
+list
+iii) On calline cond_signal, we iterate through the list of semaphores to find the waiter thread of the highest priority and wake that up.
 
 >> A4: (3 marks)
 >> Describe the sequence of events when a call to lock_acquire() causes a 
 >> priority donation. 
 >> How is nested donation handled?
+In our implementation, if a thread is waiting for a lock, it donates its priority to that lock.
+The lock in turn donates this priority to the thread which holds the lock. Furthermore, 
+we use the effective_priority struct member for this so we aren't having to change the actual priority 
+of the thread. Both threads and locks have this effective_priority. This allows nested donation to work as 
+a lock is owned by and required by only 1 thread.
+
+Essentially, we have a tree of locks and threads (alternating) which we can traverse to update priorities. 
+When a priority is changed, we traverse the tree up by looking at thread.owned_locks and lock.holder to update the 
+priorities up the tree using the update_priorities function.
 
 >> A5: (3 marks)
 >> Describe the sequence of events when lock_release() is called on a lock that 
 >> a higher-priority thread is waiting for.
+
+When lock_release is called, we change the holder of the lock to be null and remove the list element in thread.owned_locks. 
+We then lower the priority of the thread by calling update_priorities. This means we destroy the link between the lock and the current thread.
+Next, the highest priority thread which was waiting for the lock is unblocked and priorities are updated again.
+Next, this thread is put into the ready list and the current thread yields so threads can be scheduled again.
+Finally, the thread calls lock_acquire which updates priorities again.
 
 ---- SYNCHRONIZATION ----
 
@@ -93,11 +135,26 @@ effective synchronization management.
 >> potentially change during the computation?
 >> Can you use a lock to avoid the race?
 
+To avoid race conditions, we disable interrupts. This effectively prevents race conditions. 
+We believe that a lock cannot be used in all scenarios. 
+
+For example, an interrupt can occur during priority updates which could lead to the tree of threads being changed and 
+unpredictable behaviour to occur. Furthermore, we use intermediate variables such as max to store the thread priority. 
+If an interrupt was to occur, it could mean that another threads priority is changed while max is being calculated so max 
+doesn't represent the current state of the system.
+
+For these reasons, it is safer to turn off interrupts.
 ---- RATIONALE ----
 
 >> A7: (3 marks)
 >> Why did you choose this design?  
 >> In what ways is it superior to another design you considered?
+
+We chose this design because it was fairly easy to implement and it avoided race conditions due to disabling interrupts. 
+However, it is not necessarily the fastest design and can still result in long wait times if there are too many nested 
+threads requiring donation. We might want to improve this in the future by setting a limit on the depth of donation. Furthermore, 
+we could optimise this process further by exiting update_priorities early if a thread or locks priority isn't changed. 
+Currently we check all parent locks and threads in the tree until they are null. This may not be necessary in every case.
 
               ADVANCED SCHEDULER
               ==================
