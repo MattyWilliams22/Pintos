@@ -18,6 +18,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
+#define MAX_ARGUMENTS 32
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
@@ -36,10 +37,28 @@ process_execute (const char *file_name)
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
+
+  //Where the strtrok_r function will carry on from after getting program name
+  char *continue_from;
+
+  //Using strtok_r to get the command to run.
+  char *program_name = strtok_r(fn_copy, " ", &continue_from);
+
+  //Argument values
+  char *argument_values[MAX_ARGUMENTS];
+
+  //Getting argument values
+  int num_arguments = 0;
+  char *curr_token;
+  while ((curr_token = strtok_r(NULL, " ", &continue_from) != NULL)) {
+    if (num_arguments >= MAX_ARGUMENTS) {
+      return TID_ERROR;
+    }
+    argument_values[num_arguments++] = curr_token;
+  }
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (program_name, PRI_DEFAULT, start_process, argument_values);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
