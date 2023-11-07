@@ -86,6 +86,7 @@ struct thread
   /* Owned by thread.c. */
   tid_t tid;                          /* Thread identifier. */
   enum thread_status status;          /* Thread state. */
+  int status_of_exit;
   char name[16];                      /* Name (for debugging purposes). */
   uint8_t *stack;                     /* Saved stack pointer. */
   int priority;                       /* Priority. */
@@ -95,6 +96,7 @@ struct thread
   struct list_elem allelem;           /* List element for all threads list. */
   struct list owned_locks;
   struct lock *required_lock;
+
 
   /* Shared between thread.c and synch.c. */
   struct list_elem elem;              /* List element. */

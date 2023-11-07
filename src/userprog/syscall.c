@@ -16,19 +16,65 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  printf ("system call!\n");
-  thread_exit ();
+  int system_call = memcpy(&system_call, f->esp, sizeof(int));
+
+  switch (system_call) {
+    case SYS_HALT:
+    halt();
+    break;
+
+    case SYS_EXIT:
+    int status;
+    memcpy(&status, f->esp + 4, sizeof(int));
+    exit(status);
+    break;
+
+    case SYS_WAIT:
+    break;
+
+    case SYS_CREATE:
+    break;
+
+    case SYS_REMOVE:
+    break;
+
+    case SYS_OPEN:
+    break;
+
+    case SYS_FILESIZE:
+    break;
+
+    case SYS_READ:
+    break;
+
+    case SYS_WRITE:
+    break; 
+    
+    case SYS_SEEK:
+    break;
+
+    case SYS_TELL:
+    break;
+
+    case SYS_CLOSE:
+    break;
+  }
+
 }
 
 void
-halt (void) {
+halt (void) 
+{
   shutdown_power_off();
 }
 
 void
 exit (int status) 
 {
-  // Incomplete
+  thread_current()->status_of_exit = status;
+  process_exit();
+  thread_yield();
+  thread_exit();
 }
 
 pid_t

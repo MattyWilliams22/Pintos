@@ -37,6 +37,7 @@ process_execute (const char *file_name)
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
+  strlcpy (fn_copy, file_name, PGSIZE);
 
   //Where the strtrok_r function will carry on from after getting program name
   char *continue_from;
@@ -86,7 +87,7 @@ start_process (void *file_name_)
     thread_exit ();
 
   //set up the stack
-  setup_stack(&if_.esp);
+  //setup_stack(&if_.esp);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -470,11 +471,12 @@ setup_stack (void **esp)
   bool success = false;
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL) 
-    {
+  if (kpage != NULL)
+  {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        *esp = PHYS_BASE;
+      if (success) {
+      
+        *esp = PHYS_BASE - 12;
 
 
         char *argv[MAX_ARGUMENTS];
@@ -507,11 +509,14 @@ setup_stack (void **esp)
         //push fake return address
         *esp -= 4;
         memset(*esp, 0, 4);
-
-      else
-        palloc_free_page (kpage);
-    }
+  } 
+  else 
+  {
+    palloc_free_page (kpage);
+  }
+    
   return success;
+}
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel
