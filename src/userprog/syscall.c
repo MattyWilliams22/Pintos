@@ -1,9 +1,25 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
+#include <string.h>
 #include <syscall-nr.h>
+#include "userprog/process.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/synch.h"
+#include "filesys/filesys.h"
+#include "filesys/file.h"
 #include "devices/shutdown.h"
+
+/* Lock used to restrict access to the file system. */
+static struct lock filesystem_lock;
+
+/* Open file to be added to list of open files. */
+struct open_file
+{
+  struct file *file;
+  int fd;
+  struct list_elem elem;
+};
 
 static void syscall_handler (struct intr_frame *);
 
@@ -11,6 +27,8 @@ void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+
+  lock_init(&filesystem_lock);
 }
 
 static void
@@ -20,44 +38,51 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   switch (system_call) {
     case SYS_HALT:
-    halt();
-    break;
+      halt();
+      break;
 
     case SYS_EXIT:
-    int status;
-    memcpy(&status, f->esp + 4, sizeof(int));
-    exit(status);
-    break;
+      int status;
+      memcpy(&status, f->esp + 4, sizeof(int));
+      exit(status);
+      break;
 
     case SYS_WAIT:
-    break;
+      break;
 
     case SYS_CREATE:
-    break;
+      break;
 
     case SYS_REMOVE:
-    break;
+      break;
 
     case SYS_OPEN:
-    break;
+      break;
 
     case SYS_FILESIZE:
-    break;
+      break;
 
     case SYS_READ:
-    break;
+      break;
 
     case SYS_WRITE:
-    break; 
+      int fd;
+      void *buffer;
+      unsigned size;
+      memcpy(&fd, f->esp + 4, sizeof(fd));
+      memcpy(&buffer, f->esp + 8, sizeof(buffer));
+      memcpy(&size, f->esp + 12, sizeof(size));
+      write(fd, buffer, size);
+      break; 
     
     case SYS_SEEK:
-    break;
+      break;
 
     case SYS_TELL:
-    break;
+      break;
 
     case SYS_CLOSE:
-    break;
+      break;
   }
 
 }
@@ -126,11 +151,37 @@ read (int fd, void *buffer, unsigned size)
   return -1;
 }
 
+struct file *
+get_file(int fd) {
+  struct list *open_files = &thread_current()->open_files;
+  for (struct list_elem *e = list_begin(open_files); e != list_end(open_files); e = list_next(e)) {
+    struct open_file *of = list_entry(e, struct open_file, elem);
+    if (fd == of->fd) {
+      return of->fd;
+    }
+  }
+  return NULL;
+}
+
 int
 write (int fd, const void *buffer, unsigned size)
 {
-  // Incomplete
-  return -1;
+  
+  if (fd == 1) {
+    putbuf(buffer, size);
+    return size;
+  } else {
+    lock_acquire(&filesystem_lock);
+    struct file *file = get_file(fd);
+    if (file != NULL) {
+      int n = file_write(file, buffer, size);
+      lock_release(&filesystem_lock);
+      return n;
+    } else {
+      lock_release(&filesystem_lock);
+      thread_exit();
+    }
+  }
 }
 
 void

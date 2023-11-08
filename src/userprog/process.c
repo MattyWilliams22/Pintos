@@ -473,50 +473,49 @@ setup_stack (void **esp)
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL)
   {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success) {
+    success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+    if (success) {
       
-        *esp = PHYS_BASE - 12;
+      *esp = PHYS_BASE - 12;
 
 
-        char *argv[MAX_ARGUMENTS];
-        int argc = 0;
-        char *curr, *cont;
+      char *argv[MAX_ARGUMENTS];
+      int argc = 0;
+      char *curr, *cont;
 
-        //find a way to get the filename + args from process_execute and use argc
-        // to do that and put it in argv to put in the stack in reverse order.
+      //find a way to get the filename + args from process_execute and use argc
+      // to do that and put it in argv to put in the stack in reverse order.
 
 
-        //push null pointer sentinel
+      //push null pointer sentinel
+      *esp -= 4;
+      memset(*esp, 0, 4);
+
+      //push pointers to arguments in reverse order
+      int count;
+      for (count = argc - 1; count >= 0; count --){
         *esp -= 4;
-        memset(*esp, 0, 4);
+        memcpy(*esp, &argv[count], 4);
+      }
 
-        //push pointers to arguments in reverse order
-        int count;
-        for (count = argc - 1; count >= 0; count --){
-          *esp -= 4;
-          memcpy(*esp, &argv[count], 4);
-        }
+      //push pointer to first pointer
+      *esp -= 4;
+      memcpy(*esp, (uint32_t)(*esp + 4), 4);
 
-        //push pointer to first pointer
-        *esp -= 4;
-        memcpy(*esp, (uint32_t)(*esp + 4), 4);
+      //push the number of arguments
+      *esp -= 4;
+      memcpy(*esp, &argc, 4);
 
-        //push the number of arguments
-        *esp -= 4;
-        memcpy(*esp, &argc, 4);
-
-        //push fake return address
-        *esp -= 4;
-        memset(*esp, 0, 4);
-  } 
-  else 
-  {
-    palloc_free_page (kpage);
+      //push fake return address
+      *esp -= 4;
+      memset(*esp, 0, 4);
+    } 
+    else 
+    {
+      palloc_free_page (kpage);
+    }  
   }
-    
   return success;
-}
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel
