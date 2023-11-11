@@ -554,7 +554,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         if(writable && !pagedir_is_writable(t->pagedir, upage)){
           pagedir_set_writable(t->pagedir, upage, writable); 
         }
-        
       }
 
       /* Load data into the page. */

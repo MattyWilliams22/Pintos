@@ -9,6 +9,10 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "devices/shutdown.h"
+#include "threads/vaddr.h"
+#include "threads/palloc.h"
+
+#define NUM_CALLS 13
 
 /* Lock used to restrict access to the file system. */
 static struct lock filesystem_lock;
@@ -34,7 +38,10 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  int system_call = memcpy(&system_call, f->esp, sizeof(int));
+  int system_call = read_write_user(&system_call, f->esp, sizeof(system_call));
+
+  if (!system_call || system_call < 0 || system_call >= NUM_CALLS)
+    thread_exit ();
 
   switch (system_call) {
     case SYS_HALT:
@@ -43,11 +50,15 @@ syscall_handler (struct intr_frame *f UNUSED)
 
     case SYS_EXIT:
       int status;
-      memcpy(&status, f->esp + 4, sizeof(int));
+      read_write_user(&status, f->esp + 4, sizeof(int));
       exit(status);
       break;
 
     case SYS_WAIT:
+      int tid;
+      if (!read_write_user(f->esp + 4, &tid, sizeof (tid)))
+        thread_exit ();
+      f->eax = wait (tid);
       break;
 
     case SYS_CREATE:
@@ -69,9 +80,13 @@ syscall_handler (struct intr_frame *f UNUSED)
       int fd;
       void *buffer;
       unsigned size;
-      memcpy(&fd, f->esp + 4, sizeof(fd));
-      memcpy(&buffer, f->esp + 8, sizeof(buffer));
-      memcpy(&size, f->esp + 12, sizeof(size));
+
+      if (!(read_write_user(f->esp + 4, &fd, sizeof (fd)) && read_write_user(f->esp + 8, &buffer, sizeof (buffer))
+          && read_write_user(f->esp + 12, &size, sizeof (size))))
+        thread_exit ();
+      if (get_user (buffer) == -1 || get_user (buffer + size - 1) == -1)
+        thread_exit ();
+
       write(fd, buffer, size);
       break; 
     
@@ -110,10 +125,9 @@ exec (const char *cmd_line)
 }
 
 int
-wait (pid_t pid) 
+wait (int tid)
 {
-  // Incomplete
-  return process_wait(pid);
+  return process_wait (tid);
 }
 
 bool 
@@ -166,7 +180,6 @@ get_file(int fd) {
 int
 write (int fd, const void *buffer, unsigned size)
 {
-  
   if (fd == 1) {
     putbuf(buffer, size);
     return size;
@@ -201,4 +214,49 @@ void
 close (int fd) 
 {
   // Incomplete
+}
+
+/* Reads a byte at user virtual address UADDR.
+   UADDR must be below PHYS_BASE.
+   Returns the byte value if successful, -1 if a segfault
+   occurred. */
+static int
+get_user (const uint8_t *uaddr)
+{
+  if (!is_user_vaddr (uaddr))
+  {
+    return -1;
+  }
+  int result;
+  asm("movl $1f, %0; movzbl %1, %0; 1:" : "=&a"(result) : "m"(*uaddr));
+  return result;
+}
+
+/* Writes BYTE to user address UDST.
+UDST must be below PHYS_BASE.
+Returns true if successful, false if a segfault occurred. */
+static bool
+put_user (uint8_t *udst, uint8_t byte)
+{
+  int error_code;
+  asm("movl $1f, %0; movb %b2, %1; 1:"
+      : "=&a"(error_code), "=m"(*udst)
+      : "q"(byte));
+  return error_code != -1;
+}
+
+/* Copies from UADDR to dst using the get_user() function.
+   True on success, false on segfault. */
+static bool
+read_write_user (void *src, void *dst, size_t bytes)
+{
+  int32_t value;
+  for (size_t i = 0; i < bytes; i++)
+  {
+    value = get_user(src + i);
+    if (value == -1)
+      return false; // invalid memory access.
+    *(char *)(dst + i) = value & 0xff;
+  }
+  return true;
 }
