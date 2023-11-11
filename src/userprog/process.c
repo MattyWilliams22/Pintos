@@ -201,7 +201,20 @@ start_process (void *setup_params_v)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  while (true);
+  struct thread *current = thread_current();
+  for (struct list_elem *e = list_begin(&current->child_bonds); e != list_end (&current->child_bonds); e = list_next(e))
+  {
+    struct child_bond *bond = list_entry(e, struct child_bond, elem);
+    if (bond->child_tid == child_tid) 
+    {
+      sema_down(&bond->sema);
+      int exit_status = bond->exit_status;
+      list_remove(e);
+      lock_acquire(&bond->lock);
+      process_lose_connection(bond);
+      return exit_status;
+    }
+  }
   return -1;
 }
 
