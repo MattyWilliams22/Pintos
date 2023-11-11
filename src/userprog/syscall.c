@@ -41,8 +41,13 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
+  bool read_safely = true;
+
   int system_call;
-  read_write_user(f->esp, &system_call, sizeof(system_call));
+  read_safely &= read_write_user(f->esp, &system_call, sizeof(system_call));
+  if (!read_safely) {
+    thread_exit();
+  }
 
   if (system_call < 0 || system_call >= NUM_CALLS)
     thread_exit ();
@@ -55,71 +60,114 @@ syscall_handler (struct intr_frame *f UNUSED)
   void *buffer;
   unsigned size;
   int fd;
+  unsigned position;
   switch (system_call) {
     case SYS_HALT:
       halt();
       break;
 
     case SYS_EXIT:
-      read_write_user(f->esp + 4, &status, sizeof(int));
+      read_safely &= read_write_user(f->esp + 4, &status, sizeof(int));
+      if (!read_safely) {
+        thread_exit();
+      }
       exit(status);
       break;
 
     case SYS_EXEC:
-      read_write_user(f->esp + 4, &cmd_line, sizeof(char *));
+      read_safely &= read_write_user(f->esp + 4, &cmd_line, sizeof(char *));
+      if (!read_safely) {
+        thread_exit();
+      }
       f->eax = exec(cmd_line);
       break;
 
     case SYS_WAIT:
-      if (!read_write_user(f->esp + 4, &tid, sizeof(tid)))
-        thread_exit ();
+      read_safely &= read_write_user(f->esp + 4, &tid, sizeof(tid));
+      if (!read_safely) {
+        thread_exit();
+      }
       f->eax = wait(tid);
       break;
 
     case SYS_CREATE:
-      read_write_user(f->esp + 4, &file, sizeof(file));
-      read_write_user(f->esp + 8, &initial_size, sizeof(initial_size));
+      read_safely &= read_write_user(f->esp + 4, &file, sizeof(file));
+      read_safely &= read_write_user(f->esp + 8, &initial_size, sizeof(initial_size));
+      if (!read_safely) {
+        thread_exit();
+      }
       f->eax = create(file, initial_size);
       break;
 
     case SYS_REMOVE:
-      read_write_user(f->esp + 4, &file, sizeof(file));
+      read_safely &= read_write_user(f->esp + 4, &file, sizeof(file));
+      if (!read_safely) {
+        thread_exit();
+      }
       f->eax = remove(file);
       break;
 
     case SYS_OPEN:
-      read_write_user(f->esp + 4, &file, sizeof(file));
+      read_safely &= read_write_user(f->esp + 4, &file, sizeof(file));
+      if (!read_safely) {
+        thread_exit();
+      }
       f->eax = open(file);
       break;
 
     case SYS_FILESIZE:
-      read_write_user(f->esp + 4, &fd, sizeof(fd));
+      read_safely &= read_write_user(f->esp + 4, &fd, sizeof(fd));
+      if (!read_safely) {
+        thread_exit();
+      }
       f->eax = filesize(fd);
       break;
 
     case SYS_READ:
-      read_write_user(f->esp + 4, &fd, sizeof(fd));
-      read_write_user(f->esp + 8, &buffer, sizeof(buffer));
-      read_write_user(f->esp + 12, &size, sizeof(size));
+      read_safely &= read_write_user(f->esp + 4, &fd, sizeof(fd));
+      read_safely &= read_write_user(f->esp + 8, &buffer, sizeof(buffer));
+      read_safely &= read_write_user(f->esp + 12, &size, sizeof(size));
+      if (!read_safely) {
+        thread_exit();
+      }
       f->eax = read(fd, buffer, size);
       break;
 
     case SYS_WRITE:
-      if (!(read_write_user(f->esp + 4, &fd, sizeof(fd)) && read_write_user(f->esp + 8, &buffer, sizeof(buffer))
-          && read_write_user(f->esp + 12, &size, sizeof(size))))
-        thread_exit ();
+      read_safely &= read_write_user(f->esp + 4, &fd, sizeof(fd));
+      read_safely &= read_write_user(f->esp + 8, &buffer, sizeof(buffer));
+      read_safely &= read_write_user(f->esp + 12, &size, sizeof(size));
+      if (!read_safely) {
+        thread_exit();
+      }
       if (get_user(buffer) == -1 || get_user(buffer + size - 1) == -1)
         thread_exit ();
       f->eax = write(fd, buffer, size);
       break; 
     
     case SYS_SEEK:
+      read_safely &= read_write_user(f->esp + 4, &fd, sizeof(fd));
+      read_safely &= read_write_user(f->esp + 8, &position, sizeof(position));
+      if (!read_safely) {
+        thread_exit();
+      }
+      seek(fd, position);
       break;
 
     case SYS_TELL:
+      read_safely &= read_write_user(f->esp + 4, &fd, sizeof(fd));
+      if (!read_safely) {
+        thread_exit();
+      }
+      f->eax = tell(fd);
       break;
 
     case SYS_CLOSE:
+      read_safely &= read_write_user(f->esp + 4, &fd, sizeof(fd));
+      if (!read_safely) {
+        thread_exit();
+      }
+      close(fd);
       break;
   }
 
@@ -236,8 +284,23 @@ filesize (int fd)
 int 
 read (int fd, void *buffer, unsigned size) 
 {
-  // Incomplete
-  return -1;
+  if (fd == 0) {
+    for (unsigned i = 0; i < size; i++) {
+      ((char *) buffer)[i] = input_getc();
+    }
+    return size;
+  } else {
+    lock_acquire(&filesystem_lock);
+    struct file *file = get_open_file(fd);
+    if (file != NULL) {
+      int bytes_read = file_read(file, buffer, size);
+      lock_release(&filesystem_lock);
+      return bytes_read;
+    } else {
+      lock_release(&filesystem_lock);
+      thread_exit();
+    }
+  }
 }
 
 int
@@ -250,9 +313,9 @@ write (int fd, const void *buffer, unsigned size)
     lock_acquire(&filesystem_lock);
     struct file *file = get_open_file(fd);
     if (file != NULL) {
-      int n = file_write(file, buffer, size);
+      int bytes_written = file_write(file, buffer, size);
       lock_release(&filesystem_lock);
-      return n;
+      return bytes_written;
     } else {
       lock_release(&filesystem_lock);
       thread_exit();
@@ -263,20 +326,55 @@ write (int fd, const void *buffer, unsigned size)
 void
 seek (int fd, unsigned position) 
 {
-  // Incomplete
+  lock_acquire(&filesystem_lock);
+  struct file *file = get_open_file(fd);
+  if (file != NULL) {
+    file_seek(file, position);
+    lock_release(&filesystem_lock);
+  } else {
+    lock_release(&filesystem_lock);
+    thread_exit();
+  }
 }
 
 unsigned
 tell (int fd)
 {
-  // Incomplete
-  return 0;
+  lock_acquire(&filesystem_lock);
+  struct file *file = get_open_file(fd);
+  if (file != NULL) {
+    unsigned n = file_tell(file);
+    lock_release(&filesystem_lock);
+    return n;
+  } else {
+    lock_release(&filesystem_lock);
+    thread_exit();
+  }
+}
+
+void
+close_file_by_fd(int fd) 
+{
+  struct list *open_files = &thread_current ()->open_files;
+  for (struct list_elem *e = list_begin(open_files); e != list_end(open_files); e = list_next(e))
+  {
+    struct open_file *open_file = list_entry(e, struct open_file, elem);
+    if (open_file->fd == fd)
+    {
+      list_remove(&open_file->elem);
+      file_close(open_file->file);
+      free(open_file);
+      return;
+    }
+  }
 }
 
 void
 close (int fd) 
 {
-  // Incomplete
+  lock_acquire(&filesystem_lock);
+  close_file_by_fd(fd);
+  lock_release(&filesystem_lock);
 }
 
 /* Reads a byte at user virtual address UADDR.
