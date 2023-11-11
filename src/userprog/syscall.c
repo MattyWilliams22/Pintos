@@ -11,6 +11,7 @@
 #include "devices/shutdown.h"
 #include "threads/vaddr.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 
 #define NUM_CALLS 13
 
@@ -26,6 +27,8 @@ struct open_file
 };
 
 static void syscall_handler (struct intr_frame *);
+int open_file_by_name(const char *file_name);
+int open (const char *file);
 
 void
 syscall_init (void) 
@@ -38,56 +41,76 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  int system_call = read_write_user(&system_call, f->esp, sizeof(system_call));
+  int system_call;
+  read_write_user(f->esp, &system_call, sizeof(system_call));
 
-  if (!system_call || system_call < 0 || system_call >= NUM_CALLS)
+  if (system_call < 0 || system_call >= NUM_CALLS)
     thread_exit ();
 
+  int status;
+  char *cmd_line;
+  int tid;
+  char *file;
+  unsigned initial_size;
+  void *buffer;
+  unsigned size;
+  int fd;
   switch (system_call) {
     case SYS_HALT:
       halt();
       break;
 
     case SYS_EXIT:
-      int status;
-      read_write_user(&status, f->esp + 4, sizeof(int));
+      read_write_user(f->esp + 4, &status, sizeof(int));
       exit(status);
       break;
 
+    case SYS_EXEC:
+      read_write_user(f->esp + 4, &cmd_line, sizeof(char *));
+      f->eax = exec(cmd_line);
+      break;
+
     case SYS_WAIT:
-      int tid;
-      if (!read_write_user(f->esp + 4, &tid, sizeof (tid)))
+      if (!read_write_user(f->esp + 4, &tid, sizeof(tid)))
         thread_exit ();
-      f->eax = wait (tid);
+      f->eax = wait(tid);
       break;
 
     case SYS_CREATE:
+      read_write_user(f->esp + 4, &file, sizeof(file));
+      read_write_user(f->esp + 8, &initial_size, sizeof(initial_size));
+      f->eax = create(file, initial_size);
       break;
 
     case SYS_REMOVE:
+      read_write_user(f->esp + 4, &file, sizeof(file));
+      f->eax = remove(file);
       break;
 
     case SYS_OPEN:
+      read_write_user(f->esp + 4, &file, sizeof(file));
+      f->eax = open(file);
       break;
 
     case SYS_FILESIZE:
+      read_write_user(f->esp + 4, &fd, sizeof(fd));
+      f->eax = filesize(fd);
       break;
 
     case SYS_READ:
+      read_write_user(f->esp + 4, &fd, sizeof(fd));
+      read_write_user(f->esp + 8, &buffer, sizeof(buffer));
+      read_write_user(f->esp + 12, &size, sizeof(size));
+      f->eax = read(fd, buffer, size);
       break;
 
     case SYS_WRITE:
-      int fd;
-      void *buffer;
-      unsigned size;
-
-      if (!(read_write_user(f->esp + 4, &fd, sizeof (fd)) && read_write_user(f->esp + 8, &buffer, sizeof (buffer))
-          && read_write_user(f->esp + 12, &size, sizeof (size))))
+      if (!(read_write_user(f->esp + 4, &fd, sizeof(fd)) && read_write_user(f->esp + 8, &buffer, sizeof(buffer))
+          && read_write_user(f->esp + 12, &size, sizeof(size))))
         thread_exit ();
-      if (get_user (buffer) == -1 || get_user (buffer + size - 1) == -1)
+      if (get_user(buffer) == -1 || get_user(buffer + size - 1) == -1)
         thread_exit ();
-
-      write(fd, buffer, size);
+      f->eax = write(fd, buffer, size);
       break; 
     
     case SYS_SEEK:
@@ -127,35 +150,87 @@ exec (const char *cmd_line)
 int
 wait (int tid)
 {
-  return process_wait (tid);
+  return process_wait(tid);
 }
 
 bool 
 create (const char *file, unsigned initial_size) 
 {
-  // Incomplete
-  return false;
+  lock_acquire(&filesystem_lock);
+  bool success = filesys_create(file, initial_size);
+  lock_release(&filesystem_lock);
+  return success;
 }
 
 bool
 remove (const char *file) 
 {
-  // Incomplete
-  return false;
+  lock_acquire(&filesystem_lock);
+  bool success = filesys_remove(file);
+  lock_release(&filesystem_lock);
+  return success;
+}
+
+static bool
+sort_files_by_fd(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  struct open_file *file_a = list_entry(a, struct open_file, elem);
+  struct open_file *file_b = list_entry(b, struct open_file, elem);
+  return file_a->fd < file_b->fd;
+}
+
+int 
+open_file_by_name(const char *file_name)
+{
+  struct open_file *new_file;
+  new_file = (struct open_file *) malloc(sizeof(struct open_file));
+  struct file *file = filesys_open(file_name);
+  struct list *open_files = &thread_current()->open_files;
+  struct list_elem *max_fd = list_max(open_files, sort_files_by_fd, NULL);
+  int fd = list_entry(max_fd, struct open_file, elem)->fd + 1;
+  if (fd <= STDOUT_FILENO) {
+    fd = STDOUT_FILENO + 1;
+  }
+  new_file->fd = fd;
+  new_file->file = file;
+  list_push_back(open_files, &new_file->elem);
+  return fd;
 }
 
 int
 open (const char *file) 
 {
-  // Incomplete
-  return -1;
+  lock_acquire(&filesystem_lock);
+  int fd = open_file_by_name(file);
+  lock_release(&filesystem_lock);
+  return fd;
+}
+
+struct file *
+get_open_file(int fd) {
+  struct list *open_files = &thread_current()->open_files;
+  for (struct list_elem *e = list_begin(open_files); e != list_end(open_files); e = list_next(e)) {
+    struct open_file *of = list_entry(e, struct open_file, elem);
+    if (fd == of->fd) {
+      return of->file;
+    }
+  }
+  return NULL;
 }
 
 int 
 filesize (int fd) 
 {
-  // Incomplete
-  return -1;
+  lock_acquire(&filesystem_lock);
+  struct file *file = get_open_file(fd);
+  if (file != NULL) {
+    int file_len = (int) file_length(file);
+    lock_release(&filesystem_lock);
+    return file_len;
+  } else {
+    lock_release(&filesystem_lock);
+    thread_exit();
+  }
 }
 
 int 
@@ -163,18 +238,6 @@ read (int fd, void *buffer, unsigned size)
 {
   // Incomplete
   return -1;
-}
-
-struct file *
-get_file(int fd) {
-  struct list *open_files = &thread_current()->open_files;
-  for (struct list_elem *e = list_begin(open_files); e != list_end(open_files); e = list_next(e)) {
-    struct open_file *of = list_entry(e, struct open_file, elem);
-    if (fd == of->fd) {
-      return of->fd;
-    }
-  }
-  return NULL;
 }
 
 int
@@ -185,7 +248,7 @@ write (int fd, const void *buffer, unsigned size)
     return size;
   } else {
     lock_acquire(&filesystem_lock);
-    struct file *file = get_file(fd);
+    struct file *file = get_open_file(fd);
     if (file != NULL) {
       int n = file_write(file, buffer, size);
       lock_release(&filesystem_lock);
