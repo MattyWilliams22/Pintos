@@ -105,6 +105,8 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
     struct list open_files;             /* List of files open. */
+    struct child_bond *child_bond;      /* Pointer to personal bond. */
+    struct list child_bonds;            /* List of childrens bonds. */
 #endif
 
   /* Owned by thread.c. */

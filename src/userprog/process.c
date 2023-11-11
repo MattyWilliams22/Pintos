@@ -14,63 +14,130 @@
 #include "threads/flags.h"
 #include "threads/init.h"
 #include "threads/interrupt.h"
+#include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
 
 #define MAX_ARGUMENTS 32
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+
+struct child_bond
+{
+  tid_t child_tid;
+  int exit_status;
+  struct list_elem elem;
+  struct semaphore sema;
+  int connections;
+  struct lock lock;
+};
+
+struct process_setup_params
+{
+  struct child_bond *child_bond;
+  char *cmd_line;
+};
+
+/* Decrements the number of connections to the child_bond struct, 
+   as long as the current thread holds the lock for this bond. 
+   Frees the bond if the number of connections becomes 0. */
+static void
+process_lose_connection(struct child_bond *child_bond) {
+  if (child_bond->lock.holder != thread_current()) {
+    return;
+  }
+
+  child_bond->connections--;
+
+  if (child_bond->connections == 0) {
+    // May need to free elements of child_bond first
+    free(child_bond);
+    return;
+  }
+
+  lock_release(&child_bond->lock);
+}
+
+/* Passes exit status of process to child_bond struct. */
+void
+process_set_exit_status(int exit_status) {
+  if (thread_current()->child_bond == NULL) {
+    return;
+  }
+  thread_current()->child_bond->exit_status = exit_status;
+}
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t
-process_execute (const char *file_name) 
+process_execute (const char *cmd_line) 
 {
-  char *fn_copy;
+  char *cmd_line_copy;
   tid_t tid;
+  struct child_bond *child_bond;
+  struct process_setup_params *setup_params;
 
-  /* Make a copy of FILE_NAME.
+  /* Make a copy of cmd_line.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
-  if (fn_copy == NULL)
+  cmd_line_copy = palloc_get_page (0);
+  if (cmd_line_copy == NULL)
     return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
+  strlcpy (cmd_line_copy, cmd_line, PGSIZE);
+
+  /* Initialise child_bond struct. */
+  child_bond = (struct child_bond *) malloc(sizeof(struct child_bond));
+  if (child_bond == NULL) 
+  {
+    return TID_ERROR;
+  }
+  child_bond->child_tid = TID_ERROR;
+  child_bond->exit_status = -1;
+  list_push_back(&thread_current()->child_bonds, &child_bond->elem);
+  sema_init(&child_bond->sema, 0);
+  child_bond->connections = 1;
+  lock_init(&child_bond->lock);
+
+  /* Create struct containing parameters required to set up a process. */
+  setup_params = (struct process_setup_params *) malloc(sizeof(struct process_setup_params));
+  if (setup_params == NULL) {
+    return TID_ERROR;
+  }
+  setup_params->child_bond = child_bond;
+  setup_params->cmd_line = cmd_line_copy;
+
 
   //Where the strtrok_r function will carry on from after getting program name
   char *continue_from;
 
   //Using strtok_r to get the command to run.
-  char *program_name = strtok_r(fn_copy, " ", &continue_from);
-
-  //Argument values
-  char *argument_values[MAX_ARGUMENTS];
-
-  //Getting argument values
-  int num_arguments = 0;
-  char *curr_token;
-  while ((curr_token = strtok_r(NULL, " ", &continue_from) != NULL)) {
-    if (num_arguments >= MAX_ARGUMENTS) {
-      return TID_ERROR;
-    }
-    argument_values[num_arguments++] = curr_token;
-  }
+  char *program_name = strtok_r(cmd_line_copy, " ", &continue_from);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (program_name, PRI_DEFAULT, start_process, argument_values);
+  tid = thread_create (program_name, PRI_DEFAULT, start_process, setup_params);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+    palloc_free_page (cmd_line_copy); 
+
+  /* Pause until child has set value of child_bond->tid. */
+  sema_down(&child_bond->sema);
+  if (child_bond->child_tid == TID_ERROR) {
+    return TID_ERROR;
+  }
+
+  palloc_free_page(cmd_line_copy);
   return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *setup_params_v)
 {
-  char *file_name = file_name_;
+  struct process_setup_params *setup_params = (struct process_setup_params *) setup_params_v;
+  char *file_name = strtok_r(setup_params->cmd_line, " ", NULL);
   struct intr_frame if_;
   bool success;
 
@@ -81,6 +148,21 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
 
+  //Argument values
+  char *argument_values[MAX_ARGUMENTS];
+
+  char *continue_from;
+
+  //Getting argument values
+  int num_arguments = 0;
+  char *curr_token = strtok_r(setup_params->cmd_line, " ", &continue_from);
+  while ((curr_token = strtok_r(NULL, " ", &continue_from) != NULL)) {
+    if (num_arguments >= MAX_ARGUMENTS) {
+      break;
+    }
+    argument_values[num_arguments++] = curr_token;
+  }
+
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
@@ -88,6 +170,13 @@ start_process (void *file_name_)
 
   //set up the stack
   //setup_stack(&if_.esp);
+
+  /* Adjust values of child_bond and wake up parent using semaphore. */
+  struct thread *current = thread_current();
+  current->child_bond = setup_params->child_bond;
+  current->child_bond->child_tid = current->tid;
+  current->child_bond->connections++;
+  sema_up(&current->child_bond->sema);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -138,6 +227,26 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+
+  /* Write error message to console and break connection with child_bond. */
+  if (cur->child_bond != NULL) {
+    printf("%s: exit(%d)\n", cur->name, cur->child_bond->exit_status);
+
+    sema_up(&cur->child_bond->sema);
+    lock_acquire(&cur->child_bond->lock);
+    process_lose_connection(cur->child_bond);
+  }
+  /* Let go of all connections to bonds with children. */
+  struct list_elem *next;
+  for (struct list_elem *e = list_begin(&cur->child_bonds);
+       e != list_end(&cur->child_bonds); e = next)
+    {
+      struct child_bond *child = list_entry(e, struct child_bond, elem);
+      next = list_next(e);
+      lock_acquire(&child->lock);
+      process_lose_connection(child);
+    }
+
 }
 
 /* Sets up the CPU for running user code in the current

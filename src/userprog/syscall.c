@@ -96,16 +96,16 @@ halt (void)
 void
 exit (int status) 
 {
-  thread_current()->status_of_exit = status;
-  process_exit();
-  thread_yield();
+  /* Sets exit status of current process in child_bond struct. */
+  process_set_exit_status(status);
+  /* Thread exit calls process_exit, 
+     therefore the thread and process are exitted. */
   thread_exit();
 }
 
 pid_t
 exec (const char *cmd_line) 
 {
-  // Must split up cmd_line to get file name
   return (pid_t) process_execute(cmd_line);
 }
 
