@@ -107,6 +107,7 @@ struct thread
     struct list open_files;             /* List of files open. */
     struct child_bond *child_bond;      /* Pointer to personal bond. */
     struct list child_bonds;            /* List of childrens bonds. */
+    struct file *exec_file;             /* Current executable file */
 #endif
 
   /* Owned by thread.c. */

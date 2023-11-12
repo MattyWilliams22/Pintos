@@ -96,7 +96,17 @@ syscall_handler (struct intr_frame *f UNUSED)
       if (!read_safely) {
         thread_exit();
       }
+
+      char *file_copy = palloc_get_page (0);
+      if (file_copy == NULL)
+        thread_exit ();
+      if (strread_user (file, file_copy, PGSIZE) == -1)
+      {
+        palloc_free_page (file_copy);
+        thread_exit ();
+      }
       f->eax = create(file, initial_size);
+      palloc_free_page (file_copy);
       break;
 
     case SYS_REMOVE:
@@ -104,7 +114,16 @@ syscall_handler (struct intr_frame *f UNUSED)
       if (!read_safely) {
         thread_exit();
       }
+      char *file_copy = palloc_get_page (0);
+      if (file_copy == NULL)
+        thread_exit ();
+      if (strread_user (file, file_copy, PGSIZE) == -1)
+      {
+        palloc_free_page (file_copy);
+        thread_exit ();
+      }
       f->eax = remove(file);
+      palloc_free_page (file_copy);
       break;
 
     case SYS_OPEN:
@@ -112,7 +131,16 @@ syscall_handler (struct intr_frame *f UNUSED)
       if (!read_safely) {
         thread_exit();
       }
+      char *file_copy = palloc_get_page (0);
+      if (file_copy == NULL)
+        thread_exit ();
+      if (strread_user (file, file_copy, PGSIZE) == -1)
+      {
+        palloc_free_page (file_copy);
+        thread_exit ();
+      }
       f->eax = open(file);
+      palloc_free_page (file_copy);
       break;
 
     case SYS_FILESIZE:
@@ -127,7 +155,7 @@ syscall_handler (struct intr_frame *f UNUSED)
       read_safely &= read_write_user(f->esp + 4, &fd, sizeof(fd));
       read_safely &= read_write_user(f->esp + 8, &buffer, sizeof(buffer));
       read_safely &= read_write_user(f->esp + 12, &size, sizeof(size));
-      if (!read_safely) {
+      if (!read_safely || get_user (buffer) == -1 || get_user (buffer + size - 1) == -1) {
         thread_exit();
       }
       f->eax = read(fd, buffer, size);
@@ -137,7 +165,7 @@ syscall_handler (struct intr_frame *f UNUSED)
       read_safely &= read_write_user(f->esp + 4, &fd, sizeof(fd));
       read_safely &= read_write_user(f->esp + 8, &buffer, sizeof(buffer));
       read_safely &= read_write_user(f->esp + 12, &size, sizeof(size));
-      if (!read_safely) {
+      if (!read_safely || get_user (buffer) == -1 || get_user (buffer + size - 1) == -1) {
         thread_exit();
       }
       if (get_user(buffer) == -1 || get_user(buffer + size - 1) == -1)

@@ -10,4 +10,7 @@ int process_wait (tid_t);
 void process_exit (void);
 void process_activate (void);
 
+int failure (struct child_bond *child_bond, char *cmdline, struct process_setup_params *params);
+
+
 #endif /* userprog/process.h */

@@ -32,4 +32,6 @@ size_t strnlen (const char *, size_t);
 #define strncat dont_use_strncat_use_strlcat
 #define strtok dont_use_strtok_use_strtok_r
 
+size_t strtok_count (const char *s, const char *delimiters);
+
 #endif /* lib/string.h */

@@ -373,3 +373,19 @@ strlcat (char *dst, const char *src, size_t size)
   return src_len + dst_len;
 }
 
+size_t
+strtok_count (const char *s, const char *delimiters)
+{
+  for (size_t cnt = 0;; cnt++)
+  {
+    while (strchr (delimiters, *s) != NULL)
+    {
+      if (*s == '\0')
+        return cnt;
+      s++;
+    }
+    while (strchr (delimiters, *s) == NULL)
+      s++;
+  }
+}
+
