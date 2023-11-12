@@ -22,8 +22,11 @@
 
 #define MAX_ARGUMENTS 32
 static thread_func start_process NO_RETURN;
-static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static struct file *load (const char *cmdline, void (**eip) (void), void **esp);
 static void process_lose_connection(struct child_bond *child_bond);
+
+/* Lock used to restrict access to the file system. */
+static struct lock filesystem_lock;
 
 struct child_bond
 {
@@ -47,6 +50,18 @@ struct open_file
   int fd;
   struct file *file;
 };
+
+void
+acquire_filesystem_lock (void)
+{
+  lock_acquire (&filesystem_lock);
+}
+
+void
+release_filesystem_lock (void)
+{
+  lock_release (&filesystem_lock);
+}
 
 /* Decrements the number of connections to the child_bond struct, 
    as long as the current thread holds the lock for this bond. 
@@ -94,14 +109,14 @@ process_execute (const char *cmd_line)
      Otherwise there's a race between the caller and load(). */
   cmd_line_copy = palloc_get_page (0);
   if (cmd_line_copy == NULL)
-    failure(cmd_line_copy, child_bond, setup_params);
+    goto fail;
   strlcpy (cmd_line_copy, cmd_line, PGSIZE);
 
   /* Initialise child_bond struct. */
   child_bond = (struct child_bond *) malloc(sizeof(struct child_bond));
   if (child_bond == NULL) 
   {
-    failure(cmd_line_copy, child_bond, setup_params);return TID_ERROR;
+    goto fail;
   }
   child_bond->child_tid = TID_ERROR;
   child_bond->exit_status = -1;
@@ -113,7 +128,7 @@ process_execute (const char *cmd_line)
   /* Create struct containing parameters required to set up a process. */
   setup_params = (struct process_setup_params *) malloc(sizeof(struct process_setup_params));
   if (setup_params == NULL) {
-    failure(cmd_line_copy, child_bond, setup_params);
+    goto fail;
   }
   setup_params->child_bond = child_bond;
   setup_params->cmd_line = cmd_line_copy;
@@ -126,33 +141,29 @@ process_execute (const char *cmd_line)
   char *program_name = strtok_r(cmd_line, " ", &continue_from);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid_t tid = thread_create (program_name, PRI_DEFAULT, start_process, setup_params);
+  tid = thread_create (program_name, PRI_DEFAULT, start_process, setup_params);
   if (tid == TID_ERROR)
-    failure(cmd_line_copy, child_bond, setup_params);
+    goto fail;
 
   /* Pause until child has set value of child_bond->tid. */
   sema_down(&child_bond->sema);
   if (child_bond->child_tid == TID_ERROR) {
-    failure(cmd_line_copy, child_bond, setup_params);
+    goto fail;
   }
 
   palloc_free_page(cmd_line_copy);
   free(setup_params);
   return tid;
-}
-
-int
-failure (struct child_bond *child_bond, char *cmdline, struct process_setup_params *params)
-{
-  if (cmdline != NULL)
-    palloc_free_page (cmdline);
+fail:
+  if (cmd_line_copy != NULL)
+    palloc_free_page (cmd_line_copy);
   if (child_bond != NULL)
-  {
-    list_remove (&child_bond->elem);
-    free (child_bond);
-  }
-  if (params != NULL)
-    free (params);
+    {
+      list_remove (&child_bond->elem);
+      free (child_bond);
+    }
+  if (setup_params != NULL)
+    free (setup_params);
   return TID_ERROR;
 }
 
@@ -184,11 +195,11 @@ start_process (void *setup_params_v)
   //Argument values and count
   size_t argument_count = strtok_count (setup_params->cmd_line, " ");
   if (argument_count == 0)
-    failure_start_process();
+    goto fail;
   char **argument_values;
   argument_values = malloc (argument_count * sizeof (char **));
   if (argument_values == NULL)
-    failure_start_process();
+    goto fail;
 
   // Set up stack
   char *curr_token;
@@ -200,11 +211,11 @@ start_process (void *setup_params_v)
     ASSERT (i < argument_count);
 
     if (i == 0 && (curr_thread->exec_file = load (curr_token, &if_.eip, &if_.esp)) == NULL)
-      failure_start_process();
+      goto fail;
 
     /* Copy arg onto stack. */
     if (!stack_push (&if_.esp, curr_token, strlen (curr_token) + 1))
-      failure_start_process();
+      goto fail;
 
     argument_values[i] = if_.esp;
   }
@@ -216,14 +227,14 @@ start_process (void *setup_params_v)
   void *null = NULL;
   if (!stack_push (&if_.esp, &null, sizeof (null))
       || !stack_push (&if_.esp, argument_values, argument_count * sizeof (char *)))
-    failure_start_process();
+    goto fail;
 
   void *argument_values_stack = if_.esp;
   uint32_t argument_count_stack = argument_count;
   if (!stack_push (&if_.esp, &argument_values_stack, sizeof (argument_values_stack))
       || !stack_push (&if_.esp, &argument_count_stack, sizeof (argument_count_stack))
       || !stack_push (&if_.esp, &null, sizeof (null)))
-    failure_start_process();
+    goto fail;
 
   /* Clean up. */
   free (argument_values);
@@ -242,6 +253,18 @@ start_process (void *setup_params_v)
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
+
+fail:
+  if (argument_values != NULL)
+    free (argument_values);
+
+  curr_thread->child_bond = setup_params->child_bond;
+  curr_thread->child_bond->connections++;
+  ASSERT (setup_params->child_bond->child_tid == TID_ERROR);
+  sema_up (&curr_thread->child_bond->sema);
+
+  thread_exit ();
+  NOT_REACHED ();
 }
 
 /* Waits for thread TID to die and returns its exit status. 
@@ -254,7 +277,7 @@ start_process (void *setup_params_v)
  * This function will be implemented in task 2.
  * For now, it does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid)
 {
   struct thread *current = thread_current();
   for (struct list_elem *e = list_begin(&current->child_bonds); e != list_end (&current->child_bonds); e = list_next(e))
@@ -316,6 +339,22 @@ process_exit (void)
       process_lose_connection(child);
     }
 
+  lock_acquire (&filesystem_lock);
+
+  // If open files, close and free memory
+  for (struct list_elem *e = list_begin (&cur->open_files);
+       e != list_end (&cur->open_files); e = next)
+  {
+    struct open_file *entry = list_entry (e, struct open_file, elem);
+    file_close (entry->file);
+    next = list_next (e);
+    free (entry);
+  }
+
+  if (cur->exec_file != NULL)
+    file_close (cur->exec_file);
+
+  lock_release (&filesystem_lock);
 }
 
 /* Sets up the CPU for running user code in the current
@@ -407,7 +446,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
    Stores the executable's entry point into *EIP
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
-bool
+struct file *
 load (const char *file_name, void (**eip) (void), void **esp) 
 {
   struct thread *t = thread_current ();
@@ -422,6 +461,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
+  lock_acquire(&filesystem_lock);
 
   /* Open executable file. */
   file = filesys_open (file_name);
@@ -430,6 +470,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
       printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
+
+  file_deny_write(file);
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -515,7 +557,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
  done:
   /* We arrive here whether the load is successful or not. */
   file_close (file);
-  return success;
+  return success ? file : NULL;
 }
 
 /* load() helpers. */
@@ -603,7 +645,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       uint8_t *kpage = pagedir_get_page (t->pagedir, upage);
       
       if (kpage == NULL){
-        
         /* Get a new page of memory. */
         kpage = palloc_get_page (PAL_USER);
         if (kpage == NULL){
@@ -652,45 +693,10 @@ setup_stack (void **esp)
   {
     success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
     if (success) {
-      
-      *esp = PHYS_BASE - 12;
-
-
-      char *argv[MAX_ARGUMENTS];
-      int argc = 0;
-      char *curr, *cont;
-
-      //find a way to get the filename + args from process_execute and use argc
-      // to do that and put it in argv to put in the stack in reverse order.
-
-
-      //push null pointer sentinel
-      *esp -= 4;
-      memset(*esp, 0, 4);
-
-      //push pointers to arguments in reverse order
-      int count;
-      for (count = argc - 1; count >= 0; count --){
-        *esp -= 4;
-        memcpy(*esp, &argv[count], 4);
-      }
-
-      //push pointer to first pointer
-      *esp -= 4;
-      memcpy(*esp, (uint32_t)(*esp + 4), 4);
-
-      //push the number of arguments
-      *esp -= 4;
-      memcpy(*esp, &argc, 4);
-
-      //push fake return address
-      *esp -= 4;
-      memset(*esp, 0, 4);
-    } 
-    else 
-    {
-      palloc_free_page (kpage);
-    }  
+      *esp = PHYS_BASE;
+    } else {
+      palloc_free_page(kpage);
+    }
   }
   return success;
 }

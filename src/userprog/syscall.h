@@ -28,5 +28,6 @@ struct file *get_file(int fd);
 static bool read_write_user (void *src, void *dst, size_t bytes);
 static bool put_user (uint8_t *udst, uint8_t byte);
 static int get_user (const uint8_t *uaddr);
+int safe_user_copy (void *src, char *dst, size_t buffer_size);
 
 #endif /* userprog/syscall.h */

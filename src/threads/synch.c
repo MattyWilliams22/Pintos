@@ -418,3 +418,21 @@ cond_broadcast (struct condition *cond, struct lock *lock)
   while (!list_empty (&cond->waiters))
     cond_signal (cond, lock);
 }
+
+// Destroy lock without releasing (memory needs to be freed)
+void
+lock_destroy (struct lock *lock)
+{
+  ASSERT (lock != NULL);
+  ASSERT (lock_held_by_current_thread (lock));
+
+  enum intr_level old_level = intr_disable ();
+  lock->holder = NULL;
+  if (!thread_mlfqs)
+  {
+    ASSERT (list_empty (&lock->semaphore.waiters));
+    list_remove (&lock->elem);
+    ASSERT (lock->effective_priority == PRI_MIN);
+  }
+  intr_set_level (old_level);
+}

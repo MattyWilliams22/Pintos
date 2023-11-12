@@ -15,9 +15,6 @@
 
 #define NUM_CALLS 13
 
-/* Lock used to restrict access to the file system. */
-static struct lock filesystem_lock;
-
 /* Open file to be added to list of open files. */
 struct open_file
 {
@@ -34,8 +31,6 @@ void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-
-  lock_init(&filesystem_lock);
 }
 
 static void
@@ -56,6 +51,7 @@ syscall_handler (struct intr_frame *f UNUSED)
   char *cmd_line;
   int tid;
   char *file;
+  char *file_copy;
   unsigned initial_size;
   void *buffer;
   unsigned size;
@@ -97,10 +93,10 @@ syscall_handler (struct intr_frame *f UNUSED)
         thread_exit();
       }
 
-      char *file_copy = palloc_get_page (0);
+      file_copy = palloc_get_page (0);
       if (file_copy == NULL)
         thread_exit ();
-      if (strread_user (file, file_copy, PGSIZE) == -1)
+      if (safe_user_copy (file, file_copy, PGSIZE) == -1)
       {
         palloc_free_page (file_copy);
         thread_exit ();
@@ -114,10 +110,10 @@ syscall_handler (struct intr_frame *f UNUSED)
       if (!read_safely) {
         thread_exit();
       }
-      char *file_copy = palloc_get_page (0);
+      file_copy = palloc_get_page (0);
       if (file_copy == NULL)
         thread_exit ();
-      if (strread_user (file, file_copy, PGSIZE) == -1)
+      if (safe_user_copy (file, file_copy, PGSIZE) == -1)
       {
         palloc_free_page (file_copy);
         thread_exit ();
@@ -131,10 +127,10 @@ syscall_handler (struct intr_frame *f UNUSED)
       if (!read_safely) {
         thread_exit();
       }
-      char *file_copy = palloc_get_page (0);
+      file_copy = palloc_get_page (0);
       if (file_copy == NULL)
         thread_exit ();
-      if (strread_user (file, file_copy, PGSIZE) == -1)
+      if (safe_user_copy (file, file_copy, PGSIZE) == -1)
       {
         palloc_free_page (file_copy);
         thread_exit ();
@@ -232,18 +228,18 @@ wait (int tid)
 bool 
 create (const char *file, unsigned initial_size) 
 {
-  lock_acquire(&filesystem_lock);
+  acquire_filesystem_lock();
   bool success = filesys_create(file, initial_size);
-  lock_release(&filesystem_lock);
+  release_filesystem_lock();
   return success;
 }
 
 bool
 remove (const char *file) 
 {
-  lock_acquire(&filesystem_lock);
+  acquire_filesystem_lock();
   bool success = filesys_remove(file);
-  lock_release(&filesystem_lock);
+  release_filesystem_lock();
   return success;
 }
 
@@ -276,9 +272,9 @@ open_file_by_name(const char *file_name)
 int
 open (const char *file) 
 {
-  lock_acquire(&filesystem_lock);
+  acquire_filesystem_lock();
   int fd = open_file_by_name(file);
-  lock_release(&filesystem_lock);
+  release_filesystem_lock();
   return fd;
 }
 
@@ -297,14 +293,14 @@ get_open_file(int fd) {
 int 
 filesize (int fd) 
 {
-  lock_acquire(&filesystem_lock);
+  acquire_filesystem_lock();
   struct file *file = get_open_file(fd);
   if (file != NULL) {
     int file_len = (int) file_length(file);
-    lock_release(&filesystem_lock);
+    release_filesystem_lock();
     return file_len;
   } else {
-    lock_release(&filesystem_lock);
+    release_filesystem_lock();
     thread_exit();
   }
 }
@@ -318,14 +314,14 @@ read (int fd, void *buffer, unsigned size)
     }
     return size;
   } else {
-    lock_acquire(&filesystem_lock);
+    acquire_filesystem_lock();
     struct file *file = get_open_file(fd);
     if (file != NULL) {
       int bytes_read = file_read(file, buffer, size);
-      lock_release(&filesystem_lock);
+      release_filesystem_lock();
       return bytes_read;
     } else {
-      lock_release(&filesystem_lock);
+      release_filesystem_lock();
       thread_exit();
     }
   }
@@ -338,14 +334,14 @@ write (int fd, const void *buffer, unsigned size)
     putbuf(buffer, size);
     return size;
   } else {
-    lock_acquire(&filesystem_lock);
+    acquire_filesystem_lock();
     struct file *file = get_open_file(fd);
     if (file != NULL) {
       int bytes_written = file_write(file, buffer, size);
-      lock_release(&filesystem_lock);
+      release_filesystem_lock();
       return bytes_written;
     } else {
-      lock_release(&filesystem_lock);
+      release_filesystem_lock();
       thread_exit();
     }
   }
@@ -354,13 +350,13 @@ write (int fd, const void *buffer, unsigned size)
 void
 seek (int fd, unsigned position) 
 {
-  lock_acquire(&filesystem_lock);
+  acquire_filesystem_lock();
   struct file *file = get_open_file(fd);
   if (file != NULL) {
     file_seek(file, position);
-    lock_release(&filesystem_lock);
+    release_filesystem_lock();
   } else {
-    lock_release(&filesystem_lock);
+    release_filesystem_lock();
     thread_exit();
   }
 }
@@ -368,14 +364,14 @@ seek (int fd, unsigned position)
 unsigned
 tell (int fd)
 {
-  lock_acquire(&filesystem_lock);
+  acquire_filesystem_lock();
   struct file *file = get_open_file(fd);
   if (file != NULL) {
     unsigned n = file_tell(file);
-    lock_release(&filesystem_lock);
+    release_filesystem_lock();
     return n;
   } else {
-    lock_release(&filesystem_lock);
+    release_filesystem_lock();
     thread_exit();
   }
 }
@@ -400,9 +396,9 @@ close_file_by_fd(int fd)
 void
 close (int fd) 
 {
-  lock_acquire(&filesystem_lock);
+  acquire_filesystem_lock();
   close_file_by_fd(fd);
-  lock_release(&filesystem_lock);
+  release_filesystem_lock();
 }
 
 /* Reads a byte at user virtual address UADDR.
@@ -448,4 +444,22 @@ read_write_user (void *src, void *dst, size_t bytes)
     *(char *)(dst + i) = value & 0xff;
   }
   return true;
+}
+
+int
+safe_user_copy (void *src, char *dst, size_t buffer_size)
+{
+  size_t i = 0;
+  for (; i < buffer_size; i++)
+  {
+    int value = get_user (src + i);
+    if (value == -1)
+      return -1;
+    dst[i] = value & 0xff;
+    if (dst[i] == 0)
+      break;
+  }
+  if (i == buffer_size)
+    dst[--i] = 0;
+  return i;
 }
