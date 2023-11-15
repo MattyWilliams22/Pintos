@@ -197,12 +197,14 @@ syscall_handler (struct intr_frame *f UNUSED)
 
 }
 
+/* Terminates Pintos. */
 void
 halt (void) 
 {
   shutdown_power_off();
 }
 
+/* Terminates the current user program. */
 void
 exit (int status) 
 {
@@ -213,18 +215,22 @@ exit (int status)
   thread_exit();
 }
 
+/* Runs the executable given in cmd_line. */
 pid_t
 exec (const char *cmd_line) 
 {
   return (pid_t) process_execute(cmd_line);
 }
 
+/* Waits until child process (tid) terminates, 
+   then returns the exit status of the child process. */
 int
 wait (int tid)
 {
   return process_wait(tid);
 }
 
+/* Creates a new file called file, initially initial_size bytes in size. */
 bool 
 create (const char *file, unsigned initial_size) 
 {
@@ -234,6 +240,7 @@ create (const char *file, unsigned initial_size)
   return success;
 }
 
+/* Deletes the file called file from the file system. */
 bool
 remove (const char *file) 
 {
@@ -243,6 +250,7 @@ remove (const char *file)
   return success;
 }
 
+/* Compares two files based on their fd values. */
 static bool
 sort_files_by_fd(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
@@ -251,6 +259,7 @@ sort_files_by_fd(const struct list_elem *a, const struct list_elem *b, void *aux
   return file_a->fd < file_b->fd;
 }
 
+/* Opens a file with the name file_name and adds it to this threads list of open files. */
 int 
 open_file_by_name(const char *file_name)
 {
@@ -269,6 +278,7 @@ open_file_by_name(const char *file_name)
   return fd;
 }
 
+/* Opens the file called file. */
 int
 open (const char *file) 
 {
@@ -278,6 +288,7 @@ open (const char *file)
   return fd;
 }
 
+/* Gets the file struct of the file open as fd. */
 struct file *
 get_open_file(int fd) {
   struct list *open_files = &thread_current()->open_files;
@@ -290,6 +301,7 @@ get_open_file(int fd) {
   return NULL;
 }
 
+/* Returns the size, in bytes, of the file open as fd. */
 int 
 filesize (int fd) 
 {
@@ -305,6 +317,8 @@ filesize (int fd)
   }
 }
 
+/* Reads size bytes from buffer into the open file fd. 
+   If fd == 0, reads keyboard input instead. */
 int 
 read (int fd, void *buffer, unsigned size) 
 {
@@ -327,6 +341,8 @@ read (int fd, void *buffer, unsigned size)
   }
 }
 
+/* Writes size bytes from buffer to the open file fd. 
+   If fd == 1, writes all of buffer to the console. */
 int
 write (int fd, const void *buffer, unsigned size)
 {
@@ -347,6 +363,7 @@ write (int fd, const void *buffer, unsigned size)
   }
 }
 
+/* Changes the next byte to be read or written to in open file fd to position. */
 void
 seek (int fd, unsigned position) 
 {
@@ -361,6 +378,8 @@ seek (int fd, unsigned position)
   }
 }
 
+/* Returns the position of the next byte to be read or written in open file fd,
+   expressed in bytes from the beginning of the file. */
 unsigned
 tell (int fd)
 {
@@ -376,6 +395,7 @@ tell (int fd)
   }
 }
 
+/* Closes the open file fd. */
 void
 close_file_by_fd(int fd) 
 {
@@ -393,6 +413,7 @@ close_file_by_fd(int fd)
   }
 }
 
+/* Closes file descriptor fd. */
 void
 close (int fd) 
 {

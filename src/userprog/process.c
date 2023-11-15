@@ -28,35 +28,41 @@ static void process_lose_connection(struct child_bond *child_bond);
 /* Lock used to restrict access to the file system. */
 static struct lock filesystem_lock;
 
+/* Struct used to track return value of child processes. */
 struct child_bond
 {
-  tid_t child_tid;
-  int exit_status;
-  struct list_elem elem;
-  struct semaphore sema;
-  int connections;
-  struct lock lock;
+  tid_t child_tid;        /* The tid of the child process. */
+  int exit_status;        /* The return value of the child process, default is -1. */
+  struct list_elem elem;  /* List element used in thread->child_bonds list. */
+  struct semaphore sema;  /* Semaphore used to wait for the child process. */
+  int connections;        /* Holds the number of active processes connected to this bond.
+                             The bond will be freed when connections becomes 0. */
+  struct lock lock;       /* Lock used to control access to the bond. */
 };
 
+/* Struct used to pass parameters required to set up a process. */
 struct process_setup_params
 {
   struct child_bond *child_bond;
   char *cmd_line;
 };
 
+/* Element used to add a file to a list of open files. */
 struct open_file
 {
-  struct list_elem elem;
-  int fd;
-  struct file *file;
+  struct list_elem elem;  /* List element used in thread->open_files list. */
+  int fd;                 /* File descriptor. */
+  struct file *file;      /* File struct. */
 };
 
+/* Locks the file system. */
 void
 acquire_filesystem_lock (void)
 {
   lock_acquire (&filesystem_lock);
 }
 
+/* Unlocks the file system. */
 void
 release_filesystem_lock (void)
 {
@@ -134,10 +140,10 @@ process_execute (const char *cmd_line)
   setup_params->cmd_line = cmd_line_copy;
 
 
-  //Where the strtrok_r function will carry on from after getting program name
+  /* Where the strtrok_r function will carry on from after getting program name. */
   char *continue_from;
 
-  //Using strtok_r to get the command to run.
+  /* Using strtok_r to get the command to run. */
   char *program_name = strtok_r(cmd_line, " ", &continue_from);
 
   /* Create a new thread to execute FILE_NAME. */
@@ -167,6 +173,7 @@ fail:
   return TID_ERROR;
 }
 
+/* Pushes size bytes from src onto the stack. */
 static bool
 stack_push (void **esp, const void *src, size_t size)
 {
@@ -192,7 +199,7 @@ start_process (void *setup_params_v)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
-  //Argument values and count
+  /* Argument values and count. */
   size_t argument_count = strtok_count (setup_params->cmd_line, " ");
   if (argument_count == 0)
     goto fail;
@@ -201,7 +208,7 @@ start_process (void *setup_params_v)
   if (argument_values == NULL)
     goto fail;
 
-  // Set up stack
+  /* Set up stack. */ 
   char *curr_token;
   char *continue_from;
   size_t i = 0;
@@ -220,10 +227,10 @@ start_process (void *setup_params_v)
     argument_values[i] = if_.esp;
   }
 
-  // Word align
+  /* Word align. */ 
   if_.esp = (void *) (((uintptr_t) if_.esp) & 0xfffffffc);
 
-  // Insert null
+  /* Insert null. */
   void *null = NULL;
   if (!stack_push (&if_.esp, &null, sizeof (null))
       || !stack_push (&if_.esp, argument_values, argument_count * sizeof (char *)))
@@ -341,7 +348,7 @@ process_exit (void)
 
   lock_acquire (&filesystem_lock);
 
-  // If open files, close and free memory
+  /* If open files, close and free memory. */ 
   for (struct list_elem *e = list_begin (&cur->open_files);
        e != list_end (&cur->open_files); e = next)
   {
