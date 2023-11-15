@@ -9,15 +9,24 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "devices/shutdown.h"
+#include "devices/input.h"
 #include "threads/vaddr.h"
 #include "threads/palloc.h"
 #include "threads/malloc.h"
 
 #define NUM_CALLS 13
 
+static int get_user (const uint8_t *uaddr);
+static bool put_user (uint8_t *udst, uint8_t byte);
+static bool read_write_user (void *src, void *dst, size_t bytes);
+static int safe_user_copy (void *src, char *dst, size_t buffer_size);
+
 static void syscall_handler (struct intr_frame *);
-int open_file_by_name(const char *file_name);
-int open (const char *file);
+int open_file_by_name(char *file_name);
+int open (char *file);
+struct file *get_open_file(int fd);
+void close_file_by_fd(int fd);
+struct file *get_file(int fd);
 
 void
 syscall_init (void) 
@@ -42,7 +51,7 @@ syscall_handler (struct intr_frame *f UNUSED)
   int status;
   char *cmd_line;
   char *cmd_line_copy;
-  int tid;
+  pid_t pid;
   char *file;
   char *file_copy;
   unsigned initial_size;
@@ -82,11 +91,11 @@ syscall_handler (struct intr_frame *f UNUSED)
       break;
 
     case SYS_WAIT:
-      read_safely &= read_write_user(f->esp + 4, &tid, sizeof(tid));
+      read_safely &= read_write_user(f->esp + 4, &pid, sizeof(pid));
       if (!read_safely) {
         thread_exit();
       }
-      f->eax = wait(tid);
+      f->eax = wait(pid);
       break;
 
     case SYS_CREATE:
@@ -220,7 +229,7 @@ exit (int status)
 
 /* Runs the executable given in cmd_line. */
 pid_t
-exec (const char *cmd_line) 
+exec (char *cmd_line) 
 {
   return (pid_t) process_execute(cmd_line);
 }
@@ -228,14 +237,14 @@ exec (const char *cmd_line)
 /* Waits until child process (tid) terminates, 
    then returns the exit status of the child process. */
 int
-wait (int tid)
+wait (pid_t pid)
 {
-  return process_wait(tid);
+  return process_wait(pid);
 }
 
 /* Creates a new file called file, initially initial_size bytes in size. */
 bool 
-create (const char *file, unsigned initial_size) 
+create (char *file, unsigned initial_size) 
 {
   acquire_filesystem_lock();
   bool success = filesys_create(file, initial_size);
@@ -245,7 +254,7 @@ create (const char *file, unsigned initial_size)
 
 /* Deletes the file called file from the file system. */
 bool
-remove (const char *file) 
+remove (char *file) 
 {
   acquire_filesystem_lock();
   bool success = filesys_remove(file);
@@ -264,7 +273,7 @@ sort_files_by_fd(const struct list_elem *a, const struct list_elem *b, void *aux
 
 /* Opens a file with the name file_name and adds it to this threads list of open files. */
 int 
-open_file_by_name(const char *file_name)
+open_file_by_name(char *file_name)
 {
   struct open_file *new_file;
   new_file = (struct open_file *) malloc(sizeof(struct open_file));
@@ -283,7 +292,7 @@ open_file_by_name(const char *file_name)
 
 /* Opens the file called file. */
 int
-open (const char *file) 
+open (char *file) 
 {
   acquire_filesystem_lock();
   int fd = open_file_by_name(file);
@@ -429,7 +438,7 @@ close (int fd)
    UADDR must be below PHYS_BASE.
    Returns the byte value if successful, -1 if a segfault
    occurred. */
-static int
+int
 get_user (const uint8_t *uaddr)
 {
   if (!is_user_vaddr (uaddr))
@@ -444,7 +453,7 @@ get_user (const uint8_t *uaddr)
 /* Writes BYTE to user address UDST.
 UDST must be below PHYS_BASE.
 Returns true if successful, false if a segfault occurred. */
-static bool
+bool
 put_user (uint8_t *udst, uint8_t byte)
 {
   int error_code;
@@ -456,7 +465,7 @@ put_user (uint8_t *udst, uint8_t byte)
 
 /* Copies from UADDR to dst using the get_user() function.
    True on success, false on segfault. */
-static bool
+bool
 read_write_user (void *src, void *dst, size_t bytes)
 {
   int32_t value;

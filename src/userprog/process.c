@@ -81,7 +81,7 @@ process_lose_connection(struct child_bond *child_bond) {
 
   if (child_bond->connections == 0) {
     // May need to free elements of child_bond first
-    lock_destroy(child_bond);
+    lock_destroy(&child_bond->lock);
     free(child_bond);
     return;
   }
@@ -103,12 +103,12 @@ process_set_exit_status(int exit_status) {
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t
-process_execute (const char *cmd_line) 
+process_execute (char *cmd_line) 
 {
-  char *cmd_line_copy;
+  char *cmd_line_copy = NULL;
   tid_t tid;
-  struct child_bond *child_bond;
-  struct process_setup_params *setup_params;
+  struct child_bond *child_bond = NULL;
+  struct process_setup_params *setup_params = NULL;
 
   /* Make a copy of cmd_line.
      Otherwise there's a race between the caller and load(). */
@@ -191,6 +191,7 @@ start_process (void *setup_params_v)
   struct thread *curr_thread = thread_current ();
   struct process_setup_params *setup_params = (struct process_setup_params *) setup_params_v;
   struct intr_frame if_;
+  char **argument_values = NULL;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -202,7 +203,6 @@ start_process (void *setup_params_v)
   size_t argument_count = strtok_count (setup_params->cmd_line, " ");
   if (argument_count == 0)
     goto fail;
-  char **argument_values;
   argument_values = malloc (argument_count * sizeof (char **));
   if (argument_values == NULL)
     goto fail;

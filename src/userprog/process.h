@@ -5,11 +5,12 @@
 
 void process_set_exit_status(int exit_status);
 
-tid_t process_execute (const char *cmd_line);
+tid_t process_execute (char *cmd_line);
 int process_wait (tid_t);
 void process_exit (void);
 void process_activate (void);
 
+void filesystem_lock_init (void);
 void acquire_filesystem_lock (void);
 void release_filesystem_lock (void);
 
