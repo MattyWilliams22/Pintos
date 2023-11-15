@@ -114,6 +114,7 @@ main (void)
   kbd_init ();
   input_init ();
 #ifdef USERPROG
+  filesystem_lock_init ();
   exception_init ();
   syscall_init ();
 #endif
@@ -289,7 +290,7 @@ parse_options (char **argv)
 static void
 run_task (char **argv)
 {
-  const char *task = argv[1];
+  char *task = argv[1];
   
   printf ("Executing '%s':\n", task);
 #ifdef USERPROG

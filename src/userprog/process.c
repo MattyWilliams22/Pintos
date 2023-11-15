@@ -69,6 +69,13 @@ release_filesystem_lock (void)
   lock_release (&filesystem_lock);
 }
 
+void
+filesystem_lock_init (void)
+{
+  lock_init (&filesystem_lock);
+}
+
+
 /* Decrements the number of connections to the child_bond struct, 
    as long as the current thread holds the lock for this bond. 
    Frees the bond if the number of connections becomes 0. */
