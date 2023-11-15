@@ -15,14 +15,6 @@
 
 #define NUM_CALLS 13
 
-/* Open file to be added to list of open files. */
-struct open_file
-{
-  struct file *file;
-  int fd;
-  struct list_elem elem;
-};
-
 static void syscall_handler (struct intr_frame *);
 int open_file_by_name(const char *file_name);
 int open (const char *file);
@@ -49,6 +41,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   int status;
   char *cmd_line;
+  char *cmd_line_copy;
   int tid;
   char *file;
   char *file_copy;
@@ -75,7 +68,17 @@ syscall_handler (struct intr_frame *f UNUSED)
       if (!read_safely) {
         thread_exit();
       }
-      f->eax = exec(cmd_line);
+
+      cmd_line_copy = palloc_get_page (0);
+      if (cmd_line_copy == NULL)
+        thread_exit ();
+      if (safe_user_copy (cmd_line, cmd_line_copy, PGSIZE) == -1)
+      {
+        palloc_free_page (cmd_line_copy);
+        thread_exit ();
+      }
+      f->eax = exec(cmd_line_copy);
+      palloc_free_page (cmd_line_copy);
       break;
 
     case SYS_WAIT:
@@ -467,6 +470,8 @@ read_write_user (void *src, void *dst, size_t bytes)
   return true;
 }
 
+/* Copies buffer_size bytes from src to dst, 
+   checking that each byte is in user memory. */
 int
 safe_user_copy (void *src, char *dst, size_t buffer_size)
 {

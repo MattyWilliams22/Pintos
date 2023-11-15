@@ -8,9 +8,10 @@
 
 >> Fill in the names and email addresses of your group members.
 
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
+Matty Williams          mw2122@ic.ac.uk
+Kritik Pant             kp1222@ic.ac.uk
+Shivam Subudhi          ss4522@ic.ac.uk
+Atheepan Chandrakumaran ac4322@ic.ac.uk
 
 ---- PRELIMINARIES ----
 
@@ -20,6 +21,8 @@ FirstName LastName <email@domain.example>
 >> Please cite any offline or online sources you consulted while preparing your 
 >> submission, other than the Pintos documentation, course text, lecture notes 
 >> and course staff.
+
+None.
 
                ARGUMENT PASSING
                ================
@@ -31,11 +34,48 @@ FirstName LastName <email@domain.example>
 >> global or static variable, `typedef', or enumeration. 
 >> Identify the purpose of each in roughly 25 words.
 
+#define MAX_ARGUMENTS 32
+
+/* Lock used to restrict access to the file system. */
+static struct lock filesystem_lock;
+
+/* Struct used to track return value of child processes. */
+struct child_bond
+{
+  tid_t child_tid;        /* The tid of the child process. */
+  int exit_status;        /* The return value of the child process, default is -1. */
+  struct list_elem elem;  /* List element used in thread->child_bonds list. */
+  struct semaphore sema;  /* Semaphore used to wait for the child process. */
+  int connections;        /* Holds the number of active processes connected to this bond.
+                             The bond will be freed when connections becomes 0. */
+  struct lock lock;       /* Lock used to control access to the bond. */
+};
+
+/* Struct used to pass parameters required to set up a process. */
+struct process_setup_params
+{
+  struct child_bond *child_bond;
+  char *cmd_line;
+};
+
+/* Element used to add a file to a list of open files. */
+struct open_file
+{
+  struct list_elem elem;  /* List element used in thread->open_files list. */
+  int fd;                 /* File descriptor. */
+  struct file *file;      /* File struct. */
+};
+
+
 ---- ALGORITHMS ----
 
 >> A2: (2 marks)
 >> How does your argument parsing code avoid overflowing the user's stack page?
 >> What are the efficiency considerations of your approach?
+
+We have implemented a constant called MAX_ARGUMENTS which is used to ensure that the number of arguments added to the stack is limited.
+We have set MAX_ARGUMENTS to 32, therefore no more than 32 arguments can be added to the stack, which avoids overflow.
+
 
 ---- RATIONALE ----
 
@@ -43,10 +83,17 @@ FirstName LastName <email@domain.example>
 >> Pintos does not implement strtok() because it is not thread safe. 
 >> Explain the problem with strtok() and how strtok_r() avoids this issue.
 
+The strtok() function uses global data which makes it unsafe to use with multiple threads.
+strtok_r() does not use global data so it is safe to use with multiple threads.
+
+
 >> A4: (3 marks)
 >> In Pintos, the kernel separates commands into an executable name and arguments. 
 >> In Unix-like systems, the shell does this separation. 
 >> Identify three advantages of the Unix approach.
+
+?????
+
 
                  SYSTEM CALLS
                  ============
@@ -58,11 +105,19 @@ FirstName LastName <email@domain.example>
 >> global or static variable, `typedef', or enumeration. 
 >> Identify the purpose of each in roughly 25 words.
 
+#define NUM_CALLS 13
+
+
 ---- ALGORITHMS ----
 
 >> B2: (2 marks)
 >> Describe how your code ensures safe memory access of user provided data from
 >> within the kernel. 
+
+We use the read_write_user() and safe_copy_user() functions to safely access memory.
+These functions check bytes one by one using the get_user() function to ensure 
+they are within user memory before dereferencing them.
+
 
 >> B3: (3 marks)
 >> Suppose that we choose to verify user provided pointers by validating them 
@@ -71,10 +126,22 @@ FirstName LastName <email@domain.example>
 >> table (e.g. calls to pagedir_get_page()) that would need to be made in the 
 >> following cases?
 >> a) A system call that passes the kernel a pointer to 10 bytes of user data.
+
+?????
+
+
 >> b) A system call that passes the kernel a pointer to a full page 
 >>    (4,096 bytes) of user data.
+
+?????
+
+
 >> c) A system call that passes the kernel a pointer to 4 full pages 
 >>    (16,384 bytes) of user data.
+
+?????
+
+
 >> You must briefly explain the checking tactic you would use and how it applies 
 >> to each case to generate your answers.
 
@@ -82,9 +149,23 @@ FirstName LastName <email@domain.example>
 >> When an error is detected during a system call handler, how do you ensure 
 >> that all temporarily allocated resources (locks, buffers, etc.) are freed?
 
+?????
+
+
 >> B5: (8 marks)
 >> Describe your implementation of the "wait" system call and how it interacts 
 >> with process termination for both the parent and child.
+
+The "wait" system call safely reads the pid of the child from the stack before calling the 
+process_wait() function with this value.
+
+process_wait() searches through the parent's list of child bonds until it finds the bond 
+of the child with the same pid. It then downs the semaphore, causing the parent to wait 
+until this child terminates, upping the semaphore. Then the parent can read the exit_status 
+from the bond and return this value after removing the bond from its list of child_bonds and 
+breaking its connection to the bond.
+
+
 
 ---- SYNCHRONIZATION ----
 
@@ -92,6 +173,11 @@ FirstName LastName <email@domain.example>
 >> The "exec" system call returns -1 if loading the new executable fails, so it 
 >> cannot return before the new executable has completed loading. 
 >> How does your code ensure this? 
+
+?????
+
+
+
 >> How is the load success/failure status passed back to the thread that calls 
 >> "exec"?
 
@@ -99,11 +185,43 @@ FirstName LastName <email@domain.example>
 >> Consider parent process P with child process C. 
 >> How do you ensure proper synchronization and avoid race conditions when: 
 >>   i) P calls wait(C) before C exits?
+
+wait(C) will loop through all the bonds in P's list of child_bonds.
+When it does not find any bond with child C, it will return -1 without waiting.
+
+
 >>  ii) P calls wait(C) after C exits?
+
+wait(C) will loop throught all the bonds in P's list of child_bonds until it
+finds a bond with C. At this point P will call sema_down() on the bond's semaphore 
+and wait for C to terminate, which will up the semaphore and wake up P again.
+
+
 >> iii) P terminates, without waiting, before C exits?
+
+If P terminates before C exists, C will never be created, therefore there are no
+problems with synchronization or race conditions.
+
+
 >>  iv) P terminates, without waiting, after C exits?
+
+If P terminates while C exists, P will let go of its connection to the bond with C.
+
+
+
 >> Additionally, how do you ensure that all resources are freed regardless of 
 >> the above case? 
+
+The child_bond struct contains an integer called connections which stores the number of 
+processes connected to the struct. The number of connections is initialised to 1 by P 
+and is then incremented again if process C is created successfully.
+When a process is terminated, it calls the process_lose_connection function which decrements 
+the number of connections to the struct.
+When the number of connections becomes 0, the struct is freed.
+This way it does not matter which order the parent and child are terminated in, as the child_bond 
+struct is always freed whenever it is no longer needed.
+
+
 
 ---- RATIONALE ----
 
@@ -111,6 +229,14 @@ FirstName LastName <email@domain.example>
 >> Why did you choose to implement safe access of user memory from the kernel in 
 >> the way that you did?
 
+?????
+
+
+
 >> B9: (2 marks)
 >> What advantages and disadvantages can you see to your design for file 
 >> descriptors?
+
+The numbers will get large. 
+We will never reuse fd's that are between the fd values of two open files.
+For example [1,2,4] are the currently open fd's. Therefore 3 will not be picked.
