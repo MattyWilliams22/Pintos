@@ -13,4 +13,12 @@ void process_activate (void);
 void acquire_filesystem_lock (void);
 void release_filesystem_lock (void);
 
+/* Element used to add a file to a list of open files. */
+struct open_file
+{
+  struct list_elem elem;  /* List element used in thread->open_files list. */
+  int fd;                 /* File descriptor. */
+  struct file *file;      /* File struct. */
+};
+
 #endif /* userprog/process.h */
