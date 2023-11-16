@@ -23,7 +23,7 @@
 
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
-static struct list ready_list;
+// static struct list ready_list;
 
 /* Multilevel feedback queue. Array of pointers to lists of threads. */
 static struct list multilevel_queue[64];
@@ -177,15 +177,12 @@ thread_start (void)
 size_t
 threads_ready (void)
 {
-  if (thread_mlfqs) {
-    size_t cnt = 0;
-    for (int i = PRI_MIN; i <= PRI_MAX; i++) 
-    {
-      cnt += list_size (&multilevel_queue[i]);
-    }
-    return cnt;
+  size_t cnt = 0;
+  for (int i = PRI_MIN; i <= PRI_MAX; i++) 
+  {
+    cnt += list_size (&multilevel_queue[i]);
   }
-  return list_size (&ready_list);   
+  return cnt;
 }
 
 /* Called by the timer interrupt handler at each timer tick.
@@ -463,7 +460,7 @@ void update_priorities(struct thread *t, struct lock *l)
       if (t->status == THREAD_READY) 
       {
         list_remove(&t->elem);
-        list_insert_ordered(&ready_list, &t->elem, sort_threads_by_priority, NULL);
+        list_push_back(&multilevel_queue[t->effective_priority], &t->elem);
       }
       if (!(l = t->required_lock)) break;
       t = NULL;
@@ -513,6 +510,8 @@ thread_get_priority (void)
 void
 thread_set_nice (int nice UNUSED)
 {
+  ASSERT (thread_mlfqs);
+
   struct thread *t = thread_current ();
   if (t->nice != nice)
   {
@@ -536,6 +535,8 @@ thread_set_nice (int nice UNUSED)
 int
 thread_get_nice (void) 
 {
+  ASSERT (thread_mlfqs);
+
   return thread_current()->nice;
 }
 
@@ -543,6 +544,8 @@ thread_get_nice (void)
 int
 thread_get_load_avg (void) 
 {
+  ASSERT (thread_mlfqs);
+
   return fixed_point_to_int_nearest(mult_fixed_point_by_int(load_avg, 100));
 }
 
@@ -550,6 +553,8 @@ thread_get_load_avg (void)
 void 
 update_load_avg (void) 
 {
+  ASSERT (thread_mlfqs);
+
   int num_ready = threads_ready ();
   if (thread_current () != idle_thread)
     num_ready++;
@@ -562,6 +567,8 @@ update_load_avg (void)
 int
 thread_get_recent_cpu (void) 
 {
+  ASSERT (thread_mlfqs);
+
   return fixed_point_to_int_nearest(mult_fixed_point_by_int(thread_current()->recent_cpu, 100));
 }
 
@@ -569,6 +576,8 @@ thread_get_recent_cpu (void)
 void 
 update_recent_cpu (struct thread *t, void *aux UNUSED) 
 {
+  ASSERT (thread_mlfqs);
+  
   fixed_point_t double_load_avg = mult_fixed_point_by_int(load_avg, 2);
   fixed_point_t x = add_int_to_fixed_point(double_load_avg, 1);
   fixed_point_t y = div_fixed_point(double_load_avg, x);
