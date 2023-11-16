@@ -693,11 +693,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->magic = THREAD_MAGIC;
   t->nice = 0;
   t->recent_cpu = int_to_fixed_point(0);
-  // t->exec_file = NULL;
-  // list_init(&t->open_files);
-  // list_init(&t->child_bonds);
-  // t->pagedir = NULL;
-  // t->child_bond = NULL;
+  t->exec_file = NULL;
+  list_init(&t->open_files);
+  list_init(&t->child_bonds);
+  t->pagedir = NULL;
+  t->child_bond = NULL;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
