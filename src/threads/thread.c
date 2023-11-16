@@ -727,6 +727,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->exec_file = NULL;
   list_init(&t->open_files);
   list_init(&t->child_bonds);
+  t->pagedir = NULL;
+  t->child_bond = NULL;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
