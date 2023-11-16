@@ -107,6 +107,8 @@ strtok_r() does not use global data so it is safe to use with multiple threads.
 
 #define NUM_CALLS 13
 
+Constant storing the number of different system calls that the user programs can make.
+
 
 ---- ALGORITHMS ----
 
@@ -149,7 +151,11 @@ they are within user memory before dereferencing them.
 >> When an error is detected during a system call handler, how do you ensure 
 >> that all temporarily allocated resources (locks, buffers, etc.) are freed?
 
-?????
+In the syscall handler, we check that the arguments have been read correctly from 
+user memory, if not the thread exits.
+Then, if necessary, we get a new page from the filesystem to store a copy of one 
+of the arguments. We ensure this page is freed before the function returns.
+Also, the system calls which access the filesystem (lock)
 
 
 >> B5: (8 marks)

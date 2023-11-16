@@ -80,12 +80,11 @@ process_lose_connection(struct child_bond *child_bond) {
   child_bond->connections--;
 
   if (child_bond->connections == 0) {
-    // May need to free elements of child_bond first
     lock_destroy(&child_bond->lock);
     free(child_bond);
     return;
   }
-
+  
   lock_release(&child_bond->lock);
 }
 
