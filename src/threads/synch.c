@@ -154,7 +154,10 @@ sema_up_with_lock(struct semaphore *sema, struct lock *lock)
   sema->value++;
   intr_set_level(old_level);
 
-  intr_context() ? intr_yield_on_return() : thread_yield();
+  if (thread_current ()->effective_priority < thread_max_priority ())
+  {
+    intr_context() ? intr_yield_on_return() : thread_yield();
+  }
 }
 
 /* Up or "V" operation on a semaphore.  Increments SEMA's value

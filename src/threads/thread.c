@@ -106,19 +106,6 @@ init_multilevel_queue (void) {
   }
 }
 
-/* Returns the first thread with the highest priority in the multilevel feedback queue.
-   Does not remove the thread from the queue. 
-   Returns idle_thread if no threads exist in the queue. */
-struct thread *
-find_next_multilevel_thread (void) {
-  for (int i = PRI_MAX; i >= PRI_MIN; i--) {
-    if (!list_empty(&multilevel_queue[i])) {
-      return list_entry(list_front(&multilevel_queue[i]), struct thread, elem);
-    }
-  }
-  return idle_thread;
-}
-
 /* Returns the priority value of the thread with the greatest priority in 
    the multilevel feedback queue. Disables interrupts while traversing queue. */ 
 int
@@ -157,11 +144,7 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
-  if (thread_mlfqs) {
-    init_multilevel_queue();
-  } else {
-    list_init (&ready_list);
-  }
+  init_multilevel_queue();
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -195,7 +178,7 @@ size_t
 threads_ready (void)
 {
   if (thread_mlfqs) {
-    int cnt = 0;
+    size_t cnt = 0;
     for (int i = PRI_MIN; i <= PRI_MAX; i++) 
     {
       cnt += list_size (&multilevel_queue[i]);
@@ -363,16 +346,7 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-
-  if (thread_mlfqs) {
-    /* Inserts thread to back of correct list based on priority. */
-    list_push_back(&multilevel_queue[t->priority], &t->elem);
-  } else {
-    /* Inserts thread into ready list in correct place based on priority, descending.
-     Checks if thread t has a higher priority than current thread, if so, yields CPU. */
-    list_insert_ordered(&ready_list, &t->elem, sort_threads_by_priority, NULL);
-  }
-  
+  list_push_back (&multilevel_queue[t->effective_priority], &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -442,13 +416,8 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) {
-    if (thread_mlfqs) {
-      list_push_back (&multilevel_queue[cur->priority], &cur->elem);
-    } else {
-      list_insert_ordered (&ready_list, &cur->elem, sort_threads_by_priority, NULL);
-    }
-  }
+  if (cur != idle_thread)
+    list_push_back (&multilevel_queue[cur->effective_priority], &cur->elem);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -724,11 +693,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->magic = THREAD_MAGIC;
   t->nice = 0;
   t->recent_cpu = int_to_fixed_point(0);
-  t->exec_file = NULL;
-  list_init(&t->open_files);
-  list_init(&t->child_bonds);
-  t->pagedir = NULL;
-  t->child_bond = NULL;
+  // t->exec_file = NULL;
+  // list_init(&t->open_files);
+  // list_init(&t->child_bonds);
+  // t->pagedir = NULL;
+  // t->child_bond = NULL;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -756,19 +725,12 @@ alloc_frame (struct thread *t, size_t size)
 static struct thread *
 next_thread_to_run (void) 
 {
-  if (thread_mlfqs) {
-    for (int i = PRI_MAX; i >= PRI_MIN; i--) {
-      if (!list_empty (&multilevel_queue[i])) {
-        return list_entry (list_pop_front (&multilevel_queue[i]), struct thread, elem);
-      }
+  for (int i = PRI_MAX; i >= PRI_MIN; i--) {
+    if (!list_empty (&multilevel_queue[i])) {
+      return list_entry (list_pop_front (&multilevel_queue[i]), struct thread, elem);
     }
-    return idle_thread;
-  } else {
-    if (list_empty (&ready_list))
-      return idle_thread;
-    else
-      return list_entry (list_pop_front (&ready_list), struct thread, elem);
   }
+  return idle_thread;
 }
 
 /* Completes a thread switch by activating the new thread's page

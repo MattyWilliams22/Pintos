@@ -26,7 +26,7 @@ static struct file *load (const char *cmdline, void (**eip) (void), void **esp);
 static void process_lose_connection(struct child_bond *child_bond);
 
 /* Lock used to restrict access to the file system. */
-static struct lock filesystem_lock;
+struct lock filesystem_lock;
 
 /* Struct used to track return value of child processes. */
 struct child_bond
@@ -345,7 +345,7 @@ process_exit (void)
       process_lose_connection(child);
     }
 
-  lock_acquire (&filesystem_lock);
+  acquire_filesystem_lock ();
 
   /* If open files, close and free memory. */ 
   for (struct list_elem *e = list_begin (&cur->open_files);
@@ -360,7 +360,7 @@ process_exit (void)
   if (cur->exec_file != NULL)
     file_close (cur->exec_file);
 
-  lock_release (&filesystem_lock);
+  release_filesystem_lock ();
 }
 
 /* Sets up the CPU for running user code in the current
@@ -467,7 +467,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
-  lock_acquire(&filesystem_lock);
+  acquire_filesystem_lock ();
 
   /* Open executable file. */
   file = filesys_open (file_name);
@@ -560,9 +560,12 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   success = true;
 
- done:
+done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  if (!success && file != NULL)
+    file_close (file);
+
+  release_filesystem_lock ();
   return success ? file : NULL;
 }
 
