@@ -277,7 +277,16 @@ open_file_by_name(char *file_name)
 {
   struct open_file *new_file;
   new_file = (struct open_file *) malloc(sizeof(struct open_file));
+  if (new_file == NULL) {
+    return -1;
+  }
+  
   struct file *file = filesys_open(file_name);
+  if (file == NULL) {
+    free(new_file);
+    return -1;
+  }
+
   struct list *open_files = &thread_current()->open_files;
   struct list_elem *max_fd = list_max(open_files, sort_files_by_fd, NULL);
   int fd = list_entry(max_fd, struct open_file, elem)->fd + 1;

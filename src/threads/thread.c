@@ -577,7 +577,7 @@ void
 update_recent_cpu (struct thread *t, void *aux UNUSED) 
 {
   ASSERT (thread_mlfqs);
-  
+
   fixed_point_t double_load_avg = mult_fixed_point_by_int(load_avg, 2);
   fixed_point_t x = add_int_to_fixed_point(double_load_avg, 1);
   fixed_point_t y = div_fixed_point(double_load_avg, x);
@@ -590,6 +590,8 @@ update_recent_cpu (struct thread *t, void *aux UNUSED)
    and moves it to the correct list in the multilevel feedback queue. */ 
 void
 update_priority_bsd (struct thread *t, void *aux UNUSED) {
+
+  ASSERT (thread_mlfqs);
 
   if (t == idle_thread) return;
 
