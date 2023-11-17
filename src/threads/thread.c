@@ -606,9 +606,10 @@ update_priority_bsd (struct thread *t, void *aux UNUSED) {
 
   int old_priority = t->priority;
   t->priority = new_priority;
+  t->effective_priority = new_priority;
   if (t->status == THREAD_READY && old_priority != new_priority) {
     list_remove (&t->elem);
-    list_push_back (&multilevel_queue[t->priority], &t->elem);
+    list_push_back (&multilevel_queue[t->effective_priority], &t->elem);
   }
 }
 
