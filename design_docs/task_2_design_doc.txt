@@ -36,6 +36,7 @@ None.
 
 None
 
+
 ---- ALGORITHMS ----
 
 >> A2: (2 marks)
@@ -61,6 +62,7 @@ strtok_r() does not use global data so it is safe to use with multiple threads.
 >> In Pintos, the kernel separates commands into an executable name and arguments. 
 >> In Unix-like systems, the shell does this separation. 
 >> Identify three advantages of the Unix approach.
+
 1) It reduces the complexity of kernel code so is more safe and robust.
 2) It is more flexible as it is up to the shell how to parse the arguments so modifying the 
     parsing rules doesn't require the kernel to be recompiled.
@@ -139,7 +141,7 @@ struct thread
     struct list open_files;             /* List of files open. */
     struct child_bond *child_bond;      /* Pointer to personal bond. */
     struct list child_bonds;            /* List of childrens bonds. */
-    struct file *exec_file;             /* Current executable file */
+    struct file *exec_file;             /* Current executable file. */
 #endif
 
   /* Owned by thread.c. */
@@ -156,8 +158,8 @@ We use the read_write_user() and safe_copy_user() functions to safely access mem
 These functions check bytes one by one using the get_user() function to ensure 
 they are within user memory before dereferencing them.
 
-Furthermore, if there is an invalid user pointer, the page_fault function in exception.c sets 
-eax to 0xffffffff and copies eax to eip.
+Furthermore, if there is an invalid user pointer, the page_fault function in exception.c 
+copies eax into eip and then sets the value of eax to 0xffffffff.
 
 >> B3: (3 marks)
 >> Suppose that we choose to verify user provided pointers by validating them 
@@ -165,9 +167,11 @@ eax to 0xffffffff and copies eax to eip.
 >> What is the least and the greatest possible number of inspections of the page
 >> table (e.g. calls to pagedir_get_page()) that would need to be made in the 
 >> following cases?
+
 >> a) A system call that passes the kernel a pointer to 10 bytes of user data.
 
-1 to 2
+Best case: 1 inspection.
+Worst case: 2 inspections.
 If the buffer lies on a page boundary, we need to check that both pages are valid. 
 Otherwise, we only need to check 1 page
 
@@ -175,14 +179,16 @@ Otherwise, we only need to check 1 page
 >> b) A system call that passes the kernel a pointer to a full page 
 >>    (4,096 bytes) of user data.
 
-1 to 2
+Best case: 1 inspection.
+Worst case: 2 inspections.
 4096 bytes can either fit in a single page or across 2 pages
 
 
 >> c) A system call that passes the kernel a pointer to 4 full pages 
 >>    (16,384 bytes) of user data.
 
-4 to 5
+Best case: 4 inspections.
+Worst case: 5 inspections.
 As 4095 bytes is the max virtual page size, we will need to verify at least 4 pages. 
 However, depending on how data is organised we might need to check a 5th page.
 
@@ -212,9 +218,9 @@ process_wait() function with this value.
 
 process_wait() searches through the parent's list of child bonds until it finds the bond 
 of the child with the same pid. It then downs the semaphore, causing the parent to wait 
-until this child terminates, upping the semaphore. Then the parent can read the exit_status 
-from the bond and return this value after removing the bond from its list of child_bonds and 
-breaking its connection to the bond.
+until this child terminates. When the child terminates, it will write its exit status to the child bond, 
+before upping the semaphore. Then the parent will remove this bnond from its list of bonds, read the exit status
+of the child, and then lose its connection to the bond before finally returning the exit status.
 
 
 ---- SYNCHRONIZATION ----
@@ -224,10 +230,11 @@ breaking its connection to the bond.
 >> cannot return before the new executable has completed loading. 
 >> How does your code ensure this? 
 
-The sema member in child_bond is shared between parent and child threads. It is upped by the child after 
-all necessary initialisation is done including loading the executable file. The parent thread waits for 
-the sema to be upped before returning any result. If the child thread fails to start, the tid member of 
-child_bond will be set to -1 so the parent can check it.
+A semaphore in child_bond is shared between parent and child threads through the child_bond struct. 
+During the "exec" system call the semaphore is downed by the parent process, which then waits for the child to up the semaphore 
+after all necessary initialisation is done, including loading the executable file. 
+The parent process will then wake up and return the tid value contained in the child_bond of the child, 
+and if the child process fails to run, the tid will be set to -1.
 
 
 >> How is the load success/failure status passed back to the thread that calls 
@@ -238,26 +245,34 @@ child_bond will be set to -1 so the parent can check it.
 >> How do you ensure proper synchronization and avoid race conditions when: 
 >>   i) P calls wait(C) before C exits?
 
-wait(C) will loop through all the bonds in P's list of child_bonds.
-When it does not find any bond with child C, it will return -1 without waiting.
+Process P will down the semaphore contained in the child bond between P and C.
+This will cause P to sleep until the semaphore is upped by process C.
+C will eventually terminate and write its exit status to the bond, before upping the semaphore. 
+At which point P will wake up and read the exit status left by C. This avoids race conditions as 
+C will have terminated before P reads the exit status, so it will no longer modify the exit status.
 
 
 >>  ii) P calls wait(C) after C exits?
 
-wait(C) will loop throught all the bonds in P's list of child_bonds until it
-finds a bond with C. At this point P will call sema_down() on the bond's semaphore 
-and wait for C to terminate, which will up the semaphore and wake up P again.
+Process P will down the semaphore contained in the child bond between P and C.
+This will cause P to call sema_down(), however, as C has already terminated and called sema_up(),
+P will not sleep and will continue execution instead. Now P can read the exit status left by C and
+does not have to worry about race conditions as C has already terminated and will not modify exit status again.
 
 
 >> iii) P terminates, without waiting, before C exits?
 
 If P terminates before C exists, C will never be created, therefore there are no
-problems with synchronization or race conditions.
+problems with synchronization or race conditions as P will never access any data 
+that has been accessed by C.
 
 
 >>  iv) P terminates, without waiting, after C exits?
 
 If P terminates while C exists, P will let go of its connection to the bond with C.
+This removes the child bond from P's list of child_bonds, meaning that P will no 
+longer be able to modify any data in the child_bond, eliminating the possibility of
+race condtions.
 
 
 
@@ -271,7 +286,7 @@ When a process is terminated, it calls the process_lose_connection function whic
 the number of connections to the struct.
 When the number of connections becomes 0, the struct is freed.
 This way it does not matter which order the parent and child are terminated in, as the child_bond 
-struct is always freed whenever it is no longer needed.
+struct is always freed whenever both the parent and child thread have terminated.
 
 
 
@@ -291,6 +306,15 @@ read_write_user() and safe_copy_user() functions.
 >> What advantages and disadvantages can you see to your design for file 
 >> descriptors?
 
-The numbers will get large. 
-We will never reuse fd's that are between the fd values of two open files.
-For example [1,2,4] are the currently open fd's. Therefore 3 will not be picked.
+An advantage to our design for file descriptors is that it does a good job at abstracting
+away the complexity of the file system as you do not have to keep track of the exact
+memory address of the file, just an integer which can be mapped to the correct memory location.
+This also makes it more difficult for threads to directly access files without permission 
+which they could do if the file descriptor was the address of the file.
+This is important as the file system is not inherently synchronised so access must be controlled.
+
+Our design for file descriptors has disadvantages, for example it takes time to 
+search throught the list of open files to file the file with the file descriptor
+value that you are searching for. And also the list of open files require memory 
+to be allocated and freed which takes time and must be written thoughtfully by 
+the programmer.
