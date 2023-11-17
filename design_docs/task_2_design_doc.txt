@@ -216,11 +216,14 @@ and open_file.
 The "wait" system call safely reads the pid of the child from the stack before calling the 
 process_wait() function with this value.
 
+The parent thread contains a list of the child_bonds of all child threads. 
 process_wait() searches through the parent's list of child bonds until it finds the bond 
 of the child with the same pid. It then downs the semaphore, causing the parent to wait 
-until this child terminates. When the child terminates, it will write its exit status to the child bond, 
-before upping the semaphore. Then the parent will remove this bnond from its list of bonds, read the exit status
+until this child terminates. On termination, the child will up the semaphore again. 
+Just before the child terminates, it will write its exit status to the child bond. 
+Then the parent will remove this bnond from its list of bonds, read the exit status
 of the child, and then lose its connection to the bond before finally returning the exit status.
+When the parent is terminated, the child_bonds list will be freed.
 
 
 ---- SYNCHRONIZATION ----
