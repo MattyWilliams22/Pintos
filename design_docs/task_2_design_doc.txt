@@ -167,19 +167,24 @@ eax to 0xffffffff and copies eax to eip.
 >> following cases?
 >> a) A system call that passes the kernel a pointer to 10 bytes of user data.
 
-?????
+1 to 2
+If the buffer lies on a page boundary, we need to check that both pages are valid. 
+Otherwise, we only need to check 1 page
 
 
 >> b) A system call that passes the kernel a pointer to a full page 
 >>    (4,096 bytes) of user data.
 
-?????
+1 to 2
+4096 bytes can either fit in a single page or across 2 pages
 
 
 >> c) A system call that passes the kernel a pointer to 4 full pages 
 >>    (16,384 bytes) of user data.
 
-?????
+4 to 5
+As 4095 bytes is the max virtual page size, we will need to verify at least 4 pages. 
+However, depending on how data is organised we might need to check a 5th page.
 
 
 >> You must briefly explain the checking tactic you would use and how it applies 
@@ -210,9 +215,6 @@ of the child with the same pid. It then downs the semaphore, causing the parent 
 until this child terminates, upping the semaphore. Then the parent can read the exit_status 
 from the bond and return this value after removing the bond from its list of child_bonds and 
 breaking its connection to the bond.
-
-Before upping the semaphore and indicating termination, the child will store its exit status 
-in the child_bond so the parent can retrieve it after. 
 
 
 ---- SYNCHRONIZATION ----
