@@ -20,7 +20,6 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 
-#define MAX_ARGUMENTS 32
 static thread_func start_process NO_RETURN;
 static struct file *load (const char *cmdline, void (**eip) (void), void **esp);
 static void process_lose_connection(struct child_bond *child_bond);

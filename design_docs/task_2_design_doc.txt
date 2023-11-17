@@ -34,10 +34,56 @@ None.
 >> global or static variable, `typedef', or enumeration. 
 >> Identify the purpose of each in roughly 25 words.
 
-#define MAX_ARGUMENTS 32
+None
+
+---- ALGORITHMS ----
+
+>> A2: (2 marks)
+>> How does your argument parsing code avoid overflowing the user's stack page?
+>> What are the efficiency considerations of your approach?
+
+Everytime we push onto the stack, we first check if there is enough space. This is done in the stack_push function. We also 
+prefer to copy larger blocks on the stack first where possible for efficiency.
+
+
+---- RATIONALE ----
+
+>> A3: (2 marks)
+>> Pintos does not implement strtok() because it is not thread safe. 
+>> Explain the problem with strtok() and how strtok_r() avoids this issue.
+
+The strtok() function uses global data which makes it unsafe to use with multiple threads.
+This is because it can lead to race conditions as concurrent calls aren't synchronised. 
+strtok_r() does not use global data so it is safe to use with multiple threads.
+
+
+>> A4: (3 marks)
+>> In Pintos, the kernel separates commands into an executable name and arguments. 
+>> In Unix-like systems, the shell does this separation. 
+>> Identify three advantages of the Unix approach.
+1) It reduces the complexity of kernel code so is more safe and robust.
+2) It is more flexible as it is up to the shell how to parse the arguments so modifying the 
+    parsing rules doesn't require the kernel to be recompiled.
+3) In the Unix system, the arguments can be tokenised in another thread which means that a higher priority 
+    thread can interrupt and run before the argument tokenising is complete.
+
+
+                 SYSTEM CALLS
+                 ============
+
+---- DATA STRUCTURES ----
+
+>> B1: (6 marks) 
+>> Copy here the declaration of each new or changed `struct' or `struct' member, 
+>> global or static variable, `typedef', or enumeration. 
+>> Identify the purpose of each in roughly 25 words.
+
+#define NUM_CALLS 13
+
+Constant storing the number of different system calls that the user programs can make.
 
 /* Lock used to restrict access to the file system. */
-static struct lock filesystem_lock;
+struct lock filesystem_lock;
 
 /* Struct used to track return value of child processes. */
 struct child_bond
@@ -66,49 +112,39 @@ struct open_file
   struct file *file;      /* File struct. */
 };
 
-
----- ALGORITHMS ----
-
->> A2: (2 marks)
->> How does your argument parsing code avoid overflowing the user's stack page?
->> What are the efficiency considerations of your approach?
-
-We have implemented a constant called MAX_ARGUMENTS which is used to ensure that the number of arguments added to the stack is limited.
-We have set MAX_ARGUMENTS to 32, therefore no more than 32 arguments can be added to the stack, which avoids overflow.
-
-
----- RATIONALE ----
-
->> A3: (2 marks)
->> Pintos does not implement strtok() because it is not thread safe. 
->> Explain the problem with strtok() and how strtok_r() avoids this issue.
-
-The strtok() function uses global data which makes it unsafe to use with multiple threads.
-strtok_r() does not use global data so it is safe to use with multiple threads.
+/* Thread changed to include members required for user programs */
+struct thread
+{
+  /* Owned by thread.c. */
+  tid_t tid;                          /* Thread identifier. */
+  enum thread_status status;          /* Thread state. */
+  int status_of_exit;
+  char name[16];                      /* Name (for debugging purposes). */
+  uint8_t *stack;                     /* Saved stack pointer. */
+  int priority;                       /* Priority. */
+  int effective_priority;             /* Effective priority. */
+  int nice;                           /* Niceness. */
+  fixed_point_t recent_cpu;           /* Recent CPU value for BSD Scheduler. */
+  struct list_elem allelem;           /* List element for all threads list. */
+  struct list owned_locks;
+  struct lock *required_lock;
 
 
->> A4: (3 marks)
->> In Pintos, the kernel separates commands into an executable name and arguments. 
->> In Unix-like systems, the shell does this separation. 
->> Identify three advantages of the Unix approach.
+  /* Shared between thread.c and synch.c. */
+  struct list_elem elem;              /* List element. */
 
-?????
+#ifdef USERPROG
+    /* Owned by userprog/process.c. */
+    uint32_t *pagedir;                  /* Page directory. */
+    struct list open_files;             /* List of files open. */
+    struct child_bond *child_bond;      /* Pointer to personal bond. */
+    struct list child_bonds;            /* List of childrens bonds. */
+    struct file *exec_file;             /* Current executable file */
+#endif
 
-
-                 SYSTEM CALLS
-                 ============
-
----- DATA STRUCTURES ----
-
->> B1: (6 marks) 
->> Copy here the declaration of each new or changed `struct' or `struct' member, 
->> global or static variable, `typedef', or enumeration. 
->> Identify the purpose of each in roughly 25 words.
-
-#define NUM_CALLS 13
-
-Constant storing the number of different system calls that the user programs can make.
-
+  /* Owned by thread.c. */
+  unsigned magic;                     /* Detects stack overflow. */
+};
 
 ---- ALGORITHMS ----
 
@@ -120,6 +156,8 @@ We use the read_write_user() and safe_copy_user() functions to safely access mem
 These functions check bytes one by one using the get_user() function to ensure 
 they are within user memory before dereferencing them.
 
+Furthermore, if there is an invalid user pointer, the page_fault function in exception.c sets 
+eax to 0xffffffff and copies eax to eip.
 
 >> B3: (3 marks)
 >> Suppose that we choose to verify user provided pointers by validating them 
@@ -155,7 +193,9 @@ In the syscall handler, we check that the arguments have been read correctly fro
 user memory, if not the thread exits.
 Then, if necessary, we get a new page from the filesystem to store a copy of one 
 of the arguments. We ensure this page is freed before the function returns.
-Also, the system calls which access the filesystem (lock)
+Furthermore, if any check fails, the temporarily allocated resources are freed before thread_exit 
+is called. This also calls process_exit so that all resources are freed for the process including child_bond 
+and open_file.
 
 
 >> B5: (8 marks)
@@ -171,6 +211,8 @@ until this child terminates, upping the semaphore. Then the parent can read the 
 from the bond and return this value after removing the bond from its list of child_bonds and 
 breaking its connection to the bond.
 
+Before upping the semaphore and indicating termination, the child will store its exit status 
+in the child_bond so the parent can retrieve it after. 
 
 
 ---- SYNCHRONIZATION ----
@@ -180,8 +222,10 @@ breaking its connection to the bond.
 >> cannot return before the new executable has completed loading. 
 >> How does your code ensure this? 
 
-?????
-
+The sema member in child_bond is shared between parent and child threads. It is upped by the child after 
+all necessary initialisation is done including loading the executable file. The parent thread waits for 
+the sema to be upped before returning any result. If the child thread fails to start, the tid member of 
+child_bond will be set to -1 so the parent can check it.
 
 
 >> How is the load success/failure status passed back to the thread that calls 
@@ -235,8 +279,10 @@ struct is always freed whenever it is no longer needed.
 >> Why did you choose to implement safe access of user memory from the kernel in 
 >> the way that you did?
 
-?????
-
+Modifying the page_fault function is faster as it takes advantage of the MMU. Since it 
+is used in real kernels, we thought it would be best to use this approach here as well. 
+Furthermore, get_user could deal with memory access errors easily and be incorporated into 
+read_write_user() and safe_copy_user() functions.
 
 
 >> B9: (2 marks)

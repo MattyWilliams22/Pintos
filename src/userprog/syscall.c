@@ -17,7 +17,6 @@
 #define NUM_CALLS 13
 
 static int get_user (const uint8_t *uaddr);
-static bool put_user (uint8_t *udst, uint8_t byte);
 static bool read_write_user (void *src, void *dst, size_t bytes);
 static int safe_user_copy (void *src, char *dst, size_t buffer_size);
 
@@ -457,19 +456,6 @@ get_user (const uint8_t *uaddr)
   int result;
   asm("movl $1f, %0; movzbl %1, %0; 1:" : "=&a"(result) : "m"(*uaddr));
   return result;
-}
-
-/* Writes BYTE to user address UDST.
-UDST must be below PHYS_BASE.
-Returns true if successful, false if a segfault occurred. */
-bool
-put_user (uint8_t *udst, uint8_t byte)
-{
-  int error_code;
-  asm("movl $1f, %0; movb %b2, %1; 1:"
-      : "=&a"(error_code), "=m"(*udst)
-      : "q"(byte));
-  return error_code != -1;
 }
 
 /* Copies from UADDR to dst using the get_user() function.
