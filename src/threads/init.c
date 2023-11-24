@@ -33,6 +33,7 @@
 #endif
 #ifdef VM
 #include "devices/swap.h"
+#include "vm/frame.h"
 #endif
 #ifdef FILESYS
 #include "devices/block.h"
@@ -134,6 +135,7 @@ main (void)
 #ifdef VM
   /* Initialise the swap disk */  
   swap_init ();
+  init_frame_table();
 #endif
 
   printf ("Boot complete.\n");
