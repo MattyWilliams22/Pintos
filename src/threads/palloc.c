@@ -108,7 +108,7 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
    available, returns a null pointer, unless PAL_ASSERT is set in
    FLAGS, in which case the kernel panics. */
 void *
- (enum palloc_flags flags) 
+palloc_get_page (enum palloc_flags flags) 
 {
   return palloc_get_multiple (flags, 1);
 }

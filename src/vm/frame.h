@@ -1,5 +1,8 @@
-bool compare_frames (const struct frame_a, const struct frame_b);
-void init_frame_table();
-void allocate_frame ();
-void free_frame (struct frame* frame);
-void remove_page ();
+#ifndef FRAME_H
+#define FRAME_H
+
+void init_frame_table(void);
+void *allocate_frame (void);
+void free_frame (void *frame_addr);
+
+#endif

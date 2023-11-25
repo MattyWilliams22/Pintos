@@ -110,7 +110,11 @@ process_execute (char *cmd_line)
 
   /* Make a copy of cmd_line.
      Otherwise there's a race between the caller and load(). */
+#ifdef VM
+  cmd_line_copy = allocate_frame ();
+#else
   cmd_line_copy = palloc_get_page (0);
+#endif
   if (cmd_line_copy == NULL)
     goto fail;
   strlcpy (cmd_line_copy, cmd_line, PGSIZE);
@@ -154,12 +158,20 @@ process_execute (char *cmd_line)
     goto fail;
   }
 
-  palloc_free_page(cmd_line_copy);
+#ifdef VM
+  free_frame (cmd_line_copy);
+#else
+  palloc_free_page (cmd_line_copy);
+#endif
   free(setup_params);
   return tid;
 fail:
   if (cmd_line_copy != NULL)
+#ifdef VM
+    free_frame (cmd_line_copy);
+#else
     palloc_free_page (cmd_line_copy);
+#endif
   if (child_bond != NULL)
     {
       list_remove (&child_bond->elem);
@@ -695,14 +707,22 @@ setup_stack (void **esp)
   uint8_t *kpage;
   bool success = false;
 
+#ifdef VM
+  kpage = allocate_frame ();
+#else
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+#endif
   if (kpage != NULL)
   {
     success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
     if (success) {
       *esp = PHYS_BASE;
     } else {
-      palloc_free_page(kpage);
+#ifdef VM
+        free_frame (kpage);
+#else
+        palloc_free_page (kpage);
+#endif
     }
   }
   return success;
