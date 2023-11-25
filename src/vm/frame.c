@@ -7,12 +7,18 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 
+bool compare_frames (const struct hash_elem *elem_a, 
+            const struct hash_elem *elem_b, void *aux UNUSED);
+unsigned hash_frame (const struct hash_elem *elem, void *aux UNUSED);
+
 struct frame {
   struct hash_elem elem;
   void *page;
 };
 
 struct hash frame_table;
+
+struct lock frame_table_lock;
 
 bool
 compare_frames (const struct hash_elem *elem_a, const struct hash_elem *elem_b,
@@ -30,15 +36,27 @@ hash_frame (const struct hash_elem *elem, void *aux UNUSED)
   return hash_bytes (&f->page, sizeof f->page);
 }
 
-
 void 
-init_frame_table() 
+init_frame_table (void) 
 {
+  lock_init(&frame_table_lock);
   hash_init(&frame_table, hash_frame, compare_frames, NULL);
 }
 
+void
+acquire_frame_table_lock (void)
+{
+  lock_acquire(&frame_table_lock);
+}
+
+void
+release_frame_table_lock (void)
+{
+  lock_release(&frame_table_lock);
+}
+
 void *
-allocate_frame () 
+allocate_frame (void) 
 {
   void *page = palloc_get_page(PAL_USER | PAL_ZERO);
   if (page == NULL)
