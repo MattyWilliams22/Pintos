@@ -4,6 +4,7 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "vm/page.c"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -156,11 +157,69 @@ page_fault (struct intr_frame *f)
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  kill (f);
+//   printf ("Page fault at %p: %s error %s page in %s context.\n",
+//           fault_addr,
+//           not_present ? "not present" : "rights violation",
+//           write ? "writing" : "reading",
+//           user ? "user" : "kernel");
+//   kill (f);
+   void *esp;
+   if (user) {
+      esp = f->esp;
+   } else {
+      esp = thread_current()->esp;
+   }
+
+
+   void *faulty_page = handle_fault(esp, fault_addr);
+
+   /*fault when reading user memory */
+   if (kpage == null) {
+      kill_p(f, user);
+   }
+
+   /*If the process is not a user process,
+   it sets the return value in the interrupt frame to 0xffffffff, 
+   copies this value into the instruction pointer (eip), 
+   updates the exit status of the current process, and then
+   invokes the process exit routine.*/
+   static void 
+   kill_p(struct intr_frame *frame, bool user) {
+      if (!user) {
+         frame->eax = 0xffffffff;
+         void (**func_ptr)(void);
+         func_ptr = (void (**)(void)) &frame->eax;
+         frame->eip = *func_ptr;
+      }
+      ASSERT(thread_current()->process != NULL);
+      thread_current()->process->status_of_exit = -1;
+      process_exit();
+   }
+
+   void *handle_fault(void *esp, void *addr) {
+      /*Look up page in sp table*/
+      void *page = pg_round_down(addr);
+      struct process *curr_process = process_current();
+      struct spt *spt = &curr_process->spt; //this wont work, need initialise in process
+      struct page *tpage = get_page(table, page);
+      ASSERT(tpage != NULL);
+
+      //find a way to work the status of the page out 
+      //tpage->status wont work
+      switch(tpage->status) {
+         case SWAP:
+         break;
+         case ZEROED:
+         break;
+         case FRAME:
+         break;
+         
+         //more statuses needed
+      }
+
+      
+
+
+   }
 }
 
