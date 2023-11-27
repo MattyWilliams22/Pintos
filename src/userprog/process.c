@@ -19,7 +19,10 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
+#ifdef VM
 #include "vm/frame.h"
+#include "vm/page.h"
+#endif
 
 static thread_func start_process NO_RETURN;
 static struct file *load (const char *cmdline, void (**eip) (void), void **esp);
@@ -112,7 +115,7 @@ process_execute (char *cmd_line)
   /* Make a copy of cmd_line.
      Otherwise there's a race between the caller and load(). */
 #ifdef VM
-  cmd_line_copy = allocate_frame ();
+  cmd_line_copy = allocate_frame (0, NULL);
 #else
   cmd_line_copy = palloc_get_page (0);
 #endif
@@ -320,6 +323,11 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+#ifdef VM
+  free_pt (cur->spt);
+  cur->spt = NULL;
+#endif
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -475,6 +483,14 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
+
+#ifdef VM
+  struct hash *spt = malloc (sizeof (struct hash));
+  if (spt == NULL)
+    goto done;
+  init_pt (spt);
+  t->spt = spt;
+#endif
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
@@ -666,7 +682,11 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       
       if (kpage == NULL){
         /* Get a new page of memory. */
+#ifdef VM
+        kpage = allocate_frame (PAL_USER, upage);
+#else
         kpage = palloc_get_page (PAL_USER);
+#endif
         if (kpage == NULL){
           return false;
         }
@@ -709,7 +729,7 @@ setup_stack (void **esp)
   bool success = false;
 
 #ifdef VM
-  kpage = allocate_frame ();
+  kpage = allocate_frame (PAL_USER | PAL_ZERO, ((uint8_t *) PHYS_BASE) - PGSIZE);
 #else
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
 #endif

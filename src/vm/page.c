@@ -1,8 +1,5 @@
-#include <bitmap.h>
-#include <hash.h>
-#include <list.h>
-#include <stdbool.h>
 #include <string.h>
+#include <debug.h>
 
 #include "threads/malloc.h"
 #include "threads/synch.h"
@@ -10,6 +7,8 @@
 #include "threads/vaddr.h"
 #include "vm/frame.h"
 #include "vm/page.h"
+#include "userprog/pagedir.h"
+#include "threads/palloc.h"
 
 /* Compare hash key of two pages. */
 bool
@@ -37,7 +36,7 @@ init_pt (struct hash *page_table)
 }
 
 void
-remove_page (struct hash_elem *elem, void *aux) 
+remove_page (struct hash_elem *elem, void *aux UNUSED) 
 {
   struct page *page = hash_entry(elem, struct page, elem);
   free(page); 
@@ -56,7 +55,7 @@ search_pt (struct hash *page_table, void *user_addr)
   struct page p;
   struct hash_elem *e;
 
-  p.user_addr = user_addr;
+  p.key = user_addr;
   e = hash_find (page_table, &p.elem);
   return e != NULL ? hash_entry (e, struct page, elem) : NULL;
 }
@@ -75,7 +74,7 @@ remove_pt (struct hash *page_table, void *user_addr)
   struct hash_elem *e;
 
   page.key = user_addr;
-  e = hash_delete (page_table, &p.elem);
+  e = hash_delete (page_table, &page.elem);
   return e != NULL ? hash_entry (e, struct page, elem) : NULL;
 }
 
@@ -85,7 +84,7 @@ create_file_page (struct hash *spt, void *user_page, struct file *id, off_t offs
                    bool new)
 {
   struct page *page = new ? malloc (sizeof (struct page))
-                          : page_table_lookup (spt, user_page);
+                          : search_pt (spt, user_page);
   if (page == NULL)
   {
     return false;
@@ -100,8 +99,8 @@ create_file_page (struct hash *spt, void *user_page, struct file *id, off_t offs
   page->writable = writable;
   page->type = FILE;
 
-  if (new_page)
-    if (!page_table_insert (spt, page))
+  if (new)
+    if (!insert_pt (spt, page))
       {
         free (page);
         return false;
@@ -125,7 +124,7 @@ create_frame_page (struct hash *spt, void *user_page, void *kernel_page)
   page->writable = true;
   page->file = NULL;
 
-  if (!page_table_insert (spt, page))
+  if (!insert_pt (spt, page))
     {
       free (page);
       return false;
@@ -143,7 +142,7 @@ create_zero_page (struct hash *spt, void *user_addr)
   }
 
   page->key = user_addr;
-  page->kernel_addr = kernel_addr;
+  page->kernel_addr = NULL;
   page->type = ZERO;
   page->writable = true;
   page->file = NULL;
@@ -160,12 +159,12 @@ create_zero_page (struct hash *spt, void *user_addr)
 bool
 load_page (struct hash *page_table, void *user_page)
 {
-  struct page *page = page_table_lookup (page_table, user_page);
+  struct page *page = search_pt (page_table, user_page);
   if (page == NULL)
   {
     return false;
   }
-  void *kernel_page = frame_alloc (PAL_USER, user_page);
+  void *kernel_page = allocate_frame (PAL_USER, user_page);
   if (kernel_page == NULL)
   {
     return false;
@@ -187,7 +186,7 @@ load_page (struct hash *page_table, void *user_page)
     case FRAME:
       break;
     default:
-      PANIC ();
+      PANIC ("Loading page of unknown type");
     }
 
   if (!pagedir_set_page (thread_current ()->pagedir, user_page, kernel_page, page->writable))

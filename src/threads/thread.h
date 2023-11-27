@@ -4,7 +4,11 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include <hash.h>
 #include "threads/fixed-point.h"
+#ifdef VM
+#include "vm/page.h"
+#endif
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -110,6 +114,10 @@ struct thread
     struct child_bond *child_bond;      /* Pointer to personal bond. */
     struct list child_bonds;            /* List of childrens bonds. */
     struct file *exec_file;             /* Current executable file */
+#endif
+
+#ifdef VM
+    struct hash *spt;
 #endif
 
   /* Owned by thread.c. */

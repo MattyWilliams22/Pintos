@@ -24,7 +24,7 @@ struct page
   size_t zero_bytes;
   struct file *file;
   enum page_type type;
-}
+};
 
 bool compare_pages(const struct hash_elem *elem_a, const struct hash_elem *elem_b, void *aux UNUSED);
 unsigned hash_page(const struct hash_elem *elem, void *aux UNUSED);
