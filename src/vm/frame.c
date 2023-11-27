@@ -13,7 +13,8 @@ unsigned hash_frame (const struct hash_elem *elem, void *aux UNUSED);
 
 struct frame {
   struct hash_elem elem;
-  void *page;
+  void *page_phys_addr;
+  void *page_user_addr;
 };
 
 struct hash frame_table;
@@ -26,14 +27,14 @@ compare_frames (const struct hash_elem *elem_a, const struct hash_elem *elem_b,
 {
   const struct frame *frame_a = hash_entry (elem_a, struct frame, elem);
   const struct frame *frame_b = hash_entry (elem_b, struct frame, elem);
-  return frame_a->page < frame_b->page;
+  return frame_a->page_phys_addr < frame_b->page_phys_addr;
 }
 
 unsigned
 hash_frame (const struct hash_elem *elem, void *aux UNUSED)
 {
   const struct frame *f = hash_entry (elem, struct frame, elem);
-  return hash_bytes (&f->page, sizeof f->page);
+  return hash_bytes (&f->page_phys_addr, sizeof f->page_phys_addr);
 }
 
 void 
@@ -56,10 +57,11 @@ release_frame_table_lock (void)
 }
 
 void *
-allocate_frame (void) 
+allocate_frame (enum palloc_flags flags, void *user_addr) 
 {
-  void *page = palloc_get_page(PAL_USER | PAL_ZERO);
-  if (page == NULL)
+  acquire_frame_table_lock();
+  void *page_phys_addr = palloc_get_page(flags);
+  if (page_phys_addr == NULL)
   {
     PANIC ("No frames remaining");
   }
@@ -70,16 +72,19 @@ allocate_frame (void)
     PANIC ("Allocation of frame failed (malloc)");
   }
 
-  frame->page = page;
+  frame->page_user_addr = user_addr;
+  frame->page_phys_addr = page_phys_addr;
   hash_insert(&frame_table, &frame->elem);
-  return page;
+  release_frame_table_lock();
+  return page_phys_addr;
 }
 
 void
 free_frame (void *frame_addr)
 {
   struct frame temp_frame;
-  temp_frame.page = frame_addr;
+  temp_frame.page_phys_addr = frame_addr;
+  acquire_frame_table_lock();
   struct hash_elem *e = hash_find (&frame_table, &temp_frame.elem);
 
   if (e == NULL)
@@ -89,5 +94,10 @@ free_frame (void *frame_addr)
 
   struct frame *f = hash_entry (e, struct frame, elem);
   hash_delete (&frame_table, &f->elem);
+  if (f != NULL)
+  {
+    free (f);
+  }
   palloc_free_page (frame_addr);
+  release_frame_table_lock();
 }

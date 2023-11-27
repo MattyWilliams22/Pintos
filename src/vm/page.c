@@ -1,14 +1,15 @@
-#include "vm/page.h"
-#include "vm/frame.h"
-#include "userprog/pagedir.h"
+#include <bitmap.h>
+#include <hash.h>
+#include <list.h>
+#include <stdbool.h>
+#include <string.h>
 
-/* Supplemental page table. (per process) */
-struct page
-{
-  struct hash_elem elem;
-  struct frame *frame;
-  void *key;
-}
+#include "threads/malloc.h"
+#include "threads/synch.h"
+#include "threads/thread.h"
+#include "threads/vaddr.h"
+#include "vm/frame.h"
+#include "vm/page.h"
 
 /* Compare hash key of two pages. */
 bool
@@ -28,85 +29,173 @@ hash_page (const struct hash_elem *elem, void *aux UNUSED)
   return hash_bytes (&p->key, sizeof(p->key));
 }
 
-/* Initialises supplemental page table and its fields. 
-   Returns true if initialised successfully. */
-bool
-init_spt (struct spt *spt)
-{
-  lock_init(&spt->lock);
-
-  spt->page_dir = pagedir_create();
-  if (spt->page_dir == NULL) {
-    return false;
-  }
-
-  if (!hash_init(&spt->page_table, hash_page, compare_pages, spt->page_dir)) {
-    return false;
-  }
-
-  return true;
-}
-
-/* Finds the page in the supplemental page table with the given hash key. */
-struct page *
-get_page (struct spt *spt, void *key)
-{
-  struct page temp_page;
-  temp_page.key = key;
-  struct hash_elem *elem = hash_find(&spt->page_table, temp_page.elem);
-    
-  if (elem == NULL) {
-    return NULL;
-  }
-  return hash_entry(elem, struct page, elem);
-}
-
-/* Removes page with given hash key from page table.
-   Returns true if a page was removed successfully. */
-bool
-remove_page (struct spt *spt, void *key)
-{
-  // need to set page
-  struct page *page = get_page(spt, key);
-  if (page == NULL) {
-    lock_release(&spt->lock);
-    return false;
-  } 
-
-  hash_delete(&spt->page_table, &page->elem);
-  free(page);
-
-  lock_release(&spt->lock);
-  return true;
-}
-
-/* Frees the page given by the hash elem p. 
-   Aux allows use as a hash_action_func. */
+/* Initializes supplemental page table. */
 void
-free_page (struct page *page, void *aux)
+init_pt (struct hash *page_table)
 {
-  uint32_t *page_dir = (uint32_t *)aux;
-  free_frame(page->frame);
+  hash_init(page_table, hash_page, compare_pages, NULL);
+}
+
+void
+remove_page (struct hash_elem *elem, void *aux) 
+{
+  struct page *page = hash_entry(elem, struct page, elem);
   free(page); 
 }
 
-/* Frees the supplemental page table. */
 void
-free_spt (struct spt *spt)
+free_pt (struct hash *page_table)
 {
-  /* Order of locks is crucial to avoid deadlock. */
-  acquire_frame_table_lock();
-  lock_acquire(*spt->lock);
+  hash_destroy(page_table, remove_page);
+  free(page_table);
+}
 
-  uint32_t pd = spt->page_dir;
-  if (pd != NULL) {
-    spt->page_dir = NULL;
-    pagedir_activate(NULL);
-    pagedir_destroy(pd);
+struct page *
+search_pt (struct hash *page_table, void *user_addr)
+{
+  struct page p;
+  struct hash_elem *e;
+
+  p.user_addr = user_addr;
+  e = hash_find (page_table, &p.elem);
+  return e != NULL ? hash_entry (e, struct page, elem) : NULL;
+}
+
+bool
+insert_pt (struct hash *page_table, struct page *page)
+{
+  struct hash_elem *elem = hash_insert (page_table, &page->elem);
+  return elem == NULL;
+}
+
+struct page *
+remove_pt (struct hash *page_table, void *user_addr)
+{
+  struct page page;
+  struct hash_elem *e;
+
+  page.key = user_addr;
+  e = hash_delete (page_table, &p.elem);
+  return e != NULL ? hash_entry (e, struct page, elem) : NULL;
+}
+
+bool
+create_file_page (struct hash *spt, void *user_page, struct file *id, off_t offset,
+                   uint32_t read_bytes, uint32_t zero_bytes, bool writable,
+                   bool new)
+{
+  struct page *page = new ? malloc (sizeof (struct page))
+                          : page_table_lookup (spt, user_page);
+  if (page == NULL)
+  {
+    return false;
   }
 
-  hash_destroy(&spt->page_table, free_page);
+  page->key = user_page;
+  page->kernel_addr = NULL;
+  page->file = id;
+  page->offset = offset;
+  page->read_bytes = read_bytes;
+  page->zero_bytes = zero_bytes;
+  page->writable = writable;
+  page->type = FILE;
 
-  release_frame_table_lock();
-  lock_destroy(&spt->lock);
+  if (new_page)
+    if (!page_table_insert (spt, page))
+      {
+        free (page);
+        return false;
+      }
+
+  return true;
+}
+
+bool
+create_frame_page (struct hash *spt, void *user_page, void *kernel_page)
+{
+  struct page *page = malloc (sizeof (struct page));
+  if (page == NULL)
+  {
+    return false;
+  }
+
+  page->key = user_page;
+  page->kernel_addr = kernel_page;
+  page->type = FRAME;
+  page->writable = true;
+  page->file = NULL;
+
+  if (!page_table_insert (spt, page))
+    {
+      free (page);
+      return false;
+    }
+  return true;
+}
+
+bool
+create_zero_page (struct hash *spt, void *user_addr)
+{
+  struct page *page = malloc (sizeof (struct page));
+  if (page == NULL)
+  {
+    return false;
+  }
+
+  page->key = user_addr;
+  page->kernel_addr = kernel_addr;
+  page->type = ZERO;
+  page->writable = true;
+  page->file = NULL;
+
+
+  if (!insert_pt (spt, page))
+  {
+    free (page);
+    return false;
+  }
+  return true;
+}
+
+bool
+load_page (struct hash *page_table, void *user_page)
+{
+  struct page *page = page_table_lookup (page_table, user_page);
+  if (page == NULL)
+  {
+    return false;
+  }
+  void *kernel_page = frame_alloc (PAL_USER, user_page);
+  if (kernel_page == NULL)
+  {
+    return false;
+  }
+
+  switch (page->type)
+    {
+    case ZERO:
+      memset (kernel_page, 0, PGSIZE);
+      break;
+    case FILE:
+      if (file_read_at (page->file, kernel_page, page->read_bytes, page->offset) != (int) page->read_bytes)
+      {
+        free_frame (kernel_page);
+        return false;
+      }
+      memset (kernel_page + page->read_bytes, 0, page->zero_bytes);
+      break;
+    case FRAME:
+      break;
+    default:
+      PANIC ();
+    }
+
+  if (!pagedir_set_page (thread_current ()->pagedir, user_page, kernel_page, page->writable))
+  {
+    free_frame (kernel_page);
+    return false;
+  }
+  page->kernel_addr = kernel_page;
+  page->type = FRAME;
+  return true;
 }
