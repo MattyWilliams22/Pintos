@@ -34,9 +34,9 @@ void free_pt(struct hash *page_table);
 struct page *search_pt(struct hash *page_table, void *user_addr);
 bool insert_pt(struct hash *page_table, struct page *page);
 struct page *remove_pt(struct hash *page_table, void *user_addr);
-bool create_file_page(struct hash *spt, void *user_page, struct file *id, off_t offset, uint32_t read_bytes, uint32_t zero_bytes, bool writable, bool new_page);
-bool create_frame_page(struct hash *spt, void *user_page, void *kernel_page);
-bool create_zero_page(struct hash *spt, void *user_addr);
+bool create_file_page(struct hash *page_table, void *user_page, struct file *id, off_t offset, uint32_t read_bytes, uint32_t zero_bytes, bool writable, bool new_page);
+bool create_frame_page(struct hash *page_table, void *user_page, void *kernel_page);
+bool create_zero_page(struct hash *page_table, void *user_addr);
 bool load_page(struct hash *page_table, void *user_page);
 
 #endif

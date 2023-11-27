@@ -79,12 +79,12 @@ remove_pt (struct hash *page_table, void *user_addr)
 }
 
 bool
-create_file_page (struct hash *spt, void *user_page, struct file *id, off_t offset,
+create_file_page (struct hash *page_table, void *user_page, struct file *id, off_t offset,
                    uint32_t read_bytes, uint32_t zero_bytes, bool writable,
                    bool new)
 {
   struct page *page = new ? malloc (sizeof (struct page))
-                          : search_pt (spt, user_page);
+                          : search_pt (page_table, user_page);
   if (page == NULL)
   {
     return false;
@@ -100,7 +100,7 @@ create_file_page (struct hash *spt, void *user_page, struct file *id, off_t offs
   page->type = FILE;
 
   if (new)
-    if (!insert_pt (spt, page))
+    if (!insert_pt (page_table, page))
       {
         free (page);
         return false;
@@ -110,7 +110,7 @@ create_file_page (struct hash *spt, void *user_page, struct file *id, off_t offs
 }
 
 bool
-create_frame_page (struct hash *spt, void *user_page, void *kernel_page)
+create_frame_page (struct hash *page_table, void *user_page, void *kernel_page)
 {
   struct page *page = malloc (sizeof (struct page));
   if (page == NULL)
@@ -124,7 +124,7 @@ create_frame_page (struct hash *spt, void *user_page, void *kernel_page)
   page->writable = true;
   page->file = NULL;
 
-  if (!insert_pt (spt, page))
+  if (!insert_pt (page_table, page))
     {
       free (page);
       return false;
@@ -133,7 +133,7 @@ create_frame_page (struct hash *spt, void *user_page, void *kernel_page)
 }
 
 bool
-create_zero_page (struct hash *spt, void *user_addr)
+create_zero_page (struct hash *page_table, void *user_addr)
 {
   struct page *page = malloc (sizeof (struct page));
   if (page == NULL)
@@ -148,7 +148,7 @@ create_zero_page (struct hash *spt, void *user_addr)
   page->file = NULL;
 
 
-  if (!insert_pt (spt, page))
+  if (!insert_pt (page_table, page))
   {
     free (page);
     return false;
