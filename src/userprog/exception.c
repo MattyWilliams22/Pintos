@@ -170,16 +170,24 @@ page_fault (struct intr_frame *f)
   // Address is 32 bytes below the stack pointer
   // Address is within the acceptable stack range
   if (user) {
-      bool grow = (esp <= fault_addr || (esp - fault_addr == 4) ||
-                  (esp - fault_addr == 32)) &&
-                  (PHYS_BASE - MAX_STACK <= fault_addr &&
-                  PHYS_BASE > fault_addr);
-
-      if (grow) {
-          // Allocate a new kernel page for the user page that needs to grow the stack
-          //Page directory entry to map the new user page to the allocated kernel page 
-          void *kpage = allocate_frame(PAL_USER | PAL_ZERO, pg_round_down(fault_addr));
-          pagedir_set_page(thread_current()->pagedir, pg_round_down(fault_addr), kpage, true);
+   bool grow = (esp <= fault_addr || (esp - fault_addr == 4) ||
+               (esp - fault_addr == 32)) &&
+               (PHYS_BASE - MAX_STACK <= fault_addr && PHYS_BASE > fault_addr);
+   if (grow) {
+      // Allocate a new kernel page for the user page that needs to grow the stack
+      //Page directory entry to map the new user page to the allocated kernel page 
+      void *kpage = allocate_frame(PAL_USER | PAL_ZERO, pg_round_down(fault_addr));
+      if (kpage != NULL) {
+         bool success = pagedir_set_page(thread_current()->pagedir, pg_round_down(fault_addr), kpage, true);
+         if (success) {
+            thread_current()->esp = kpage + PGSIZE;
+            return;
+         } else {
+            palloc_free_page(kpage);
+            } 
+      } 
+   } else {
+      goto fail;
       }
   }
 
