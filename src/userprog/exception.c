@@ -4,8 +4,10 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include "vm/page.h"
 #include "threads/vaddr.h"
+#include <threads/palloc.h>
+
+#define MAX_STACK (PGSIZE * 40)
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -159,12 +161,28 @@ page_fault (struct intr_frame *f)
     return;
   }
 
+  //User fault, stack pointer from interrupt frame if user is true.
+  //Kernel fault, stack pointer from current thread if user is not true.
+  void *esp = user ? f->esp : thread_current()->esp;
 
-  if (!user) {
-    f->eip = (void *) f->eax;
-    f->eax = 0xffffffff;
-    return;
+  // Address is below or at the current stack pointer 
+  // Address is 4 bytes below the stack pointer 
+  // Address is 32 bytes below the stack pointer
+  // Address is within the acceptable stack range
+  if (user) {
+      bool grow = (esp <= fault_addr || (esp - fault_addr == 4) ||
+                  (esp - fault_addr == 32)) &&
+                  (PHYS_BASE - MAX_STACK <= fault_addr &&
+                  PHYS_BASE > fault_addr);
+
+      if (grow) {
+          // Allocate a new kernel page for the user page that needs to grow the stack
+          //Page directory entry to map the new user page to the allocated kernel page 
+          void *kpage = allocate_frame(PAL_USER | PAL_ZERO, pg_round_down(fault_addr));
+          pagedir_set_page(thread_current()->pagedir, pg_round_down(fault_addr), kpage, true);
+      }
   }
+
 
   void *user_page = pg_round_down(fault_addr);
   struct hash *spt = thread_current()->spt;
