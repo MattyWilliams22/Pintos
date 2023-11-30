@@ -22,4 +22,6 @@ struct open_file
   struct file *file;      /* File struct. */
 };
 
+struct file *process_get_file(int fd);
+
 #endif /* userprog/process.h */
