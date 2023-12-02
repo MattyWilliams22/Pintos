@@ -198,3 +198,8 @@ load_page (struct hash *page_table, void *user_page)
   page->type = FRAME;
   return true;
 }
+
+void page_reclaim(struct hash *page_table)
+{
+  free_pt(page_table); 
+}

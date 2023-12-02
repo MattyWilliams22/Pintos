@@ -38,5 +38,6 @@ bool create_file_page(struct hash *page_table, void *user_page, struct file *id,
 bool create_frame_page(struct hash *page_table, void *user_page, void *kernel_page);
 bool create_zero_page(struct hash *page_table, void *user_addr);
 bool load_page(struct hash *page_table, void *user_page);
+void page_reclaim(struct hash *page_table);
 
 #endif
