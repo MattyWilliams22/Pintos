@@ -324,8 +324,8 @@ process_exit (void)
   uint32_t *pd;
 
 #ifdef VM
-  free_pt (cur->spt);
-  cur->spt = NULL;
+  free_pt (cur->page_table);
+  cur->page_table = NULL;
 #endif
 
   /* Destroy the current process's page directory and switch back
@@ -485,11 +485,12 @@ load (const char *file_name, void (**eip) (void), void **esp)
   t->pagedir = pagedir_create ();
 
 #ifdef VM
-  struct hash *spt = malloc (sizeof (struct hash));
-  if (spt == NULL)
+  struct hash *page_table = malloc (sizeof (struct hash));
+  if (page_table == NULL)
     goto done;
-  init_pt (spt);
-  t->spt = spt;
+  init_pt (page_table);
+  t->page_table = page_table;
+  list_init(&t->mapped_files);
 #endif
   if (t->pagedir == NULL) 
     goto done;

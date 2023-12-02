@@ -2,8 +2,8 @@
 #define PAGE_H
 
 #include <hash.h>
-#include "threads/malloc.h"
 #include "filesys/file.h"
+#include "threads/malloc.h"
 
 enum page_type
 {
@@ -38,5 +38,6 @@ bool create_file_page(struct hash *page_table, void *user_page, struct file *id,
 bool create_frame_page(struct hash *page_table, void *user_page, void *kernel_page);
 bool create_zero_page(struct hash *page_table, void *user_addr);
 bool load_page(struct hash *page_table, void *user_page);
+bool available_page (struct hash *page_table, void *upage);
 
 #endif

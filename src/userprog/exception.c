@@ -167,8 +167,8 @@ page_fault (struct intr_frame *f)
   }
 
   void *user_page = pg_round_down(fault_addr);
-  struct hash *spt = thread_current()->spt;
-  if (!load_page(spt, user_page)) {
+  struct hash *page_table = thread_current()->page_table;
+  if (!load_page(page_table, user_page)) {
     goto fail;
   }
   return;

@@ -7,6 +7,7 @@
 #include <hash.h>
 #include "threads/fixed-point.h"
 #ifdef VM
+#include "vm/mmap.h"
 #include "vm/page.h"
 #endif
 
@@ -108,16 +109,18 @@ struct thread
   struct list_elem elem;              /* List element. */
 
 #ifdef USERPROG
-    /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /* Page directory. */
-    struct list open_files;             /* List of files open. */
-    struct child_bond *child_bond;      /* Pointer to personal bond. */
-    struct list child_bonds;            /* List of childrens bonds. */
-    struct file *exec_file;             /* Current executable file */
+   /* Owned by userprog/process.c. */
+   uint32_t *pagedir;                  /* Page directory. */
+   struct list open_files;             /* List of files open. */
+   struct child_bond *child_bond;      /* Pointer to personal bond. */
+   struct list child_bonds;            /* List of childrens bonds. */
+   struct file *exec_file;             /* Current executable file */
 #endif
 
 #ifdef VM
-    struct hash *spt;
+   struct hash *page_table;
+   struct list mapped_files;
+   mapid_t next_mapid;
 #endif
 
   /* Owned by thread.c. */
