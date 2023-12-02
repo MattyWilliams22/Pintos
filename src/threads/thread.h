@@ -7,7 +7,6 @@
 #include <hash.h>
 #include "threads/fixed-point.h"
 #ifdef VM
-#include "vm/mmap.h"
 #include "vm/page.h"
 #endif
 
@@ -120,7 +119,7 @@ struct thread
 #ifdef VM
    struct hash *page_table;
    struct list mapped_files;
-   mapid_t next_mapid;
+   int next_mapid;
 #endif
 
   /* Owned by thread.c. */

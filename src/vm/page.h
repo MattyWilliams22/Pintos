@@ -5,6 +5,9 @@
 #include "filesys/file.h"
 #include "threads/malloc.h"
 
+/* The stack is limited to 8MB. */
+#define STACK_LIMIT (8 * 1024 * 1024)
+
 enum page_type
 {
   FILE,
@@ -38,6 +41,6 @@ bool create_file_page(struct hash *page_table, void *user_page, struct file *id,
 bool create_frame_page(struct hash *page_table, void *user_page, void *kernel_page);
 bool create_zero_page(struct hash *page_table, void *user_addr);
 bool load_page(struct hash *page_table, void *user_page);
-bool available_page (struct hash *page_table, void *upage);
+bool available_page(struct hash *page_table, void *upage);
 
 #endif

@@ -64,7 +64,7 @@ mapid_t mmap (int fd, void *addr)  {
 
         /* Always incrementing next_mapid by 1. 
            May want to check for other unused mapids. */
-    mapid_t mapid = current->next_mapid++;
+    mapid_t mapid = (mapid_t) current->next_mapid++;
     list_push_back(&current->mapped_files, &new_mapped_file->elem);
     new_mapped_file->mapid = mapid;
     new_mapped_file->file = file;

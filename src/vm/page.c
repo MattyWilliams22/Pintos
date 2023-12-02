@@ -201,12 +201,10 @@ load_page (struct hash *page_table, void *user_page)
 
 /* Returns true if the page at address upage is free to use. */
 bool
-available_page (struct page_table *page_table, void *upage) {
+available_page (struct hash *page_table, void *upage) {
   bool in_user_space = is_user_vaddr(upage);
-  bool in_stack = (upage < PHYS_BASE) && (PHYS_BASE - MAX_STACK_SIZE <= upage);
-  lock_acquire(&page_table->lock);
+  bool in_stack = (upage < PHYS_BASE) && (PHYS_BASE - STACK_LIMIT <= upage);
   struct page *page = search_pt(page_table, upage);
-  lock_release(&page_table->lock);
   bool already_mapped = page != NULL;
   return in_user_space && !in_stack && !already_mapped;
 }
