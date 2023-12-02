@@ -343,7 +343,8 @@ process_exit (void)
       cur->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
-    }
+      frame_reclaim(cur);
+    } 
 
   /* Write error message to console and break connection with child_bond. */
   if (cur->child_bond != NULL) {
