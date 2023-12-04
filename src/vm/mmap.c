@@ -88,3 +88,68 @@ mapid_t mmap (int fd, void *addr)  {
 
     return new_mapped_file->mapid;
 }
+
+void munmap(mapid_t mapping) {
+    struct thread *current = thread_current();
+    struct list *mapped_files = &current->mapped_files;
+
+    struct list_elem *e;
+    struct mapped_file *target_mapped_file = NULL;
+
+    for (e = list_begin(mapped_files); e != list_end(mapped_files); e = list_next(e)) {
+        struct mapped_file *mf = list_entry(e, struct mapped_file, elem);
+        if (mf->mapid == mapping) {
+            target_mapped_file = mf;
+            break;
+        }
+    }
+
+    if (target_mapped_file == NULL) {
+        return; // Mapping not found
+    }
+
+    // Unmap each virtual page in the range
+    void *addr = target_mapped_file->addr;
+    size_t page_count = target_mapped_file->page_count;
+ 
+    for (size_t i = 0; i < page_count; i++) {
+        struct page *page = search_pt(&current->page_table, addr);
+        if (page != NULL) {
+            if (page->type == FRAME) {
+                if (page->writable && page->kernel_addr != NULL) {
+                    // Write back modified page to file if necessary
+                    if (page->writable) {
+                        switch (page->type) {
+                            case FILE:
+                                acquire_filesystem_lock();
+                                struct file *file = file_reopen(page->file);
+                                release_filesystem_lock();
+                                if (file != NULL) {
+                                    file_write_at(file, page->kernel_addr, page->read_bytes, page->offset);
+                                    file_close(file);
+                                }
+                                break;
+                            case ZERO:
+                                // No need to write back for zero pages
+                                break;
+                            default:
+                                PANIC("Unexpected page type");
+                        }
+                    }
+                }
+                // Free the frame associated with the page
+                free_frame(page->kernel_addr);
+            }
+            // Mark the page as not present in the page table
+            remove_pt(&current->page_table, addr);
+        }
+        addr += PGSIZE;
+    }
+
+    // Remove the mapping from the process's list of mapped files
+    list_remove(&target_mapped_file->elem);
+
+    // Free the resources associated with the mapped file structure
+    free(target_mapped_file);
+}
+
