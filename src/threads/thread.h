@@ -102,8 +102,7 @@ struct thread
   struct list_elem allelem;           /* List element for all threads list. */
   struct list owned_locks;
   struct lock *required_lock;
-
-
+  
   /* Shared between thread.c and synch.c. */
   struct list_elem elem;              /* List element. */
 
@@ -117,9 +116,10 @@ struct thread
 #endif
 
 #ifdef VM
-   struct hash *page_table;
-   struct list mapped_files;
-   int next_mapid;
+  struct hash *page_table;
+  struct list mapped_files;
+  int next_mapid;
+  void *esp;
 #endif
 
   /* Owned by thread.c. */

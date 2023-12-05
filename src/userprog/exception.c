@@ -4,8 +4,10 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include "vm/page.h"
 #include "threads/vaddr.h"
+#include <threads/palloc.h>
+
+#define MAX_STACK (PGSIZE * 40)
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -147,10 +149,6 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  if (!not_present) {
-    goto fail;
-  }
-
   /* Kernel Page faults. */
   if (!user)
   {
@@ -159,21 +157,25 @@ page_fault (struct intr_frame *f)
     return;
   }
 
+#ifdef VM
+  void *user_page = pg_round_down(fault_addr);
+  struct hash *page_table = thread_current()->page_table;
+  //User fault, stack pointer from interrupt frame if user is true.
+  //Kernel fault, stack pointer from current thread if user is not true.
+  void *esp = user ? f->esp : thread_current()->esp;
 
-  if (!user) {
-    f->eip = (void *) f->eax;
-    f->eax = 0xffffffff;
+  if (esp - MAX_FAULT <= fault_addr && PHYS_BASE - MAX_STACK_SIZE <= fault_addr) {
+    if (!search_pt (page_table, user_page)) {
+      create_zero_page (page_table, user_page);
+    }
+  }
+
+  if (load_page(page_table, user_page)) {
     return;
   }
 
-  void *user_page = pg_round_down(fault_addr);
-  struct hash *page_table = thread_current()->page_table;
-  if (!load_page(page_table, user_page)) {
-    goto fail;
-  }
-  return;
+#endif
 
-fail:
   printf ("Page fault at %p: %s error %s page in %s context.\n", fault_addr,
         not_present ? "not present" : "rights violation",
         write ? "writing" : "reading", user ? "user" : "kernel");

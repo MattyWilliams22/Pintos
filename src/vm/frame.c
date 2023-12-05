@@ -14,6 +14,7 @@ struct frame {
   struct hash_elem elem;
   void *page_phys_addr;
   void *page_user_addr;
+  // struct thread* owner;
 };
 
 struct hash frame_table;
@@ -70,7 +71,7 @@ allocate_frame (enum palloc_flags flags, void *user_addr)
   {
     PANIC ("Allocation of frame failed (malloc)");
   }
-
+  // frame->owner = thread_current ();
   frame->page_user_addr = user_addr;
   frame->page_phys_addr = page_phys_addr;
   hash_insert(&frame_table, &frame->elem);
@@ -100,3 +101,28 @@ free_frame (void *frame_addr)
   palloc_free_page (frame_addr);
   release_frame_table_lock();
 }
+
+// void
+// frame_reclaim(struct thread *owner)
+// {
+//   acquire_frame_table_lock();
+
+//   struct hash_iterator iter;
+//   hash_first(&iter, &frame_table);
+
+//   while (hash_next(&iter))
+//   {
+//     struct frame *f = hash_entry(hash_cur(&iter), struct frame, elem);
+
+//     // Check if the frame == owner 
+//     if (f->owner == owner)
+//     {
+//       void *frame_addr = f->page_phys_addr;
+
+//       // Remove and free the frame from the hash table
+//       free_frame(frame_addr);
+//     }
+//   }
+
+//   release_frame_table_lock();
+// }
