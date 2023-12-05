@@ -171,18 +171,19 @@ thread_start (void)
   sema_down (&idle_started);
 }
 
-/* Returns the number of threads currently in the ready list 
-   or the number of threads in the multilevel queue,
-   if the bsd scheduler is enabled. */
+/* Returns the number of threads currently in the ready list. 
+   Disables interrupts to avoid any race-conditions on the ready list. */
 size_t
 threads_ready (void)
 {
+  enum intr_level old_level = intr_disable ();
   size_t cnt = 0;
   for (int i = PRI_MIN; i <= PRI_MAX; i++) 
   {
     cnt += list_size (&multilevel_queue[i]);
   }
   return cnt;
+  intr_set_level (old_level);
 }
 
 /* Called by the timer interrupt handler at each timer tick.
