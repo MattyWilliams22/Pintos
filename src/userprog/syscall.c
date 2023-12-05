@@ -13,7 +13,11 @@
 #include "threads/vaddr.h"
 #include "threads/palloc.h"
 #include "threads/malloc.h"
+#ifdef VM
+#include "vm/frame.h"
 #include "vm/mmap.h"
+#include "vm/page.h"
+#endif
 
 #define NUM_CALLS 15
 

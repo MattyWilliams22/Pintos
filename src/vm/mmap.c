@@ -1,7 +1,9 @@
 #include "mmap.h"
 #include <stdio.h>
+#include <hash.h>
 #include "userprog/syscall.h"
 #include "vm/page.h"
+#include "vm/frame.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
@@ -43,9 +45,8 @@ mapid_t mmap (int fd, void *addr)  {
     }
     
     struct thread *current = thread_current();
-    struct page_table page_table = &current->page_table;
-    struct list *list = &current -> mapped_files;
-    for (int i = 0; i < page_count; i++) {
+    struct hash *page_table = current->page_table;
+    for (size_t i = 0; i < page_count; i++) {
         if (!available_page(page_table, i * PGSIZE + addr)) {
             return MAP_FAILED;
         }
@@ -72,7 +73,7 @@ mapid_t mmap (int fd, void *addr)  {
     /* Lazy load file. */
     size_t bytes_left = file_size;
     off_t offset = 0;
-    for (int i = 0; i < page_count; i++) {
+    for (size_t i = 0; i < page_count; i++) {
         size_t bytes_to_read = PGSIZE >= bytes_left ? PGSIZE : bytes_left;
 
         /* Unsure what read_bytes and zero_bytes are in create_file_page function. */
@@ -87,7 +88,7 @@ mapid_t mmap (int fd, void *addr)  {
     return new_mapped_file->mapid;
 }
 
-void munmap(mapid_t mapping) {
+void munmap(mapid_t id) {
     struct thread *current = thread_current();
     struct list *mapped_files = &current->mapped_files;
 
@@ -96,7 +97,7 @@ void munmap(mapid_t mapping) {
 
     for (e = list_begin(mapped_files); e != list_end(mapped_files); e = list_next(e)) {
         struct mapped_file *mf = list_entry(e, struct mapped_file, elem);
-        if (mf->mapid == mapping) {
+        if (mf->mapid == id) {
             target_mapped_file = mf;
             break;
         }
@@ -112,7 +113,7 @@ void munmap(mapid_t mapping) {
     size_t page_count = target_mapped_file->page_count;
  
     for (size_t i = 0; i < page_count; i++) {
-        struct page *page = search_pt(&current->page_table, addr);
+        struct page *page = search_pt(current->page_table, addr);
         if (page != NULL) {
             if (page->type == FRAME) {
                 if (page->writable && page->kernel_addr != NULL) {
@@ -140,7 +141,7 @@ void munmap(mapid_t mapping) {
                 free_frame(page->kernel_addr);
             }
             /* Mark the page as not present in the page table. */ 
-            remove_pt(&current->page_table, addr);
+            remove_pt(current->page_table, addr);
         }
         addr += PGSIZE;
     }

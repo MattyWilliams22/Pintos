@@ -8,9 +8,6 @@
   
 typedef int mapid_t;
 
-mapid_t mmap(int fd, void *addr);
-void munmap(mapid_t mapid);
-
 struct mapped_file
 {
     mapid_t mapid;
@@ -19,5 +16,8 @@ struct mapped_file
     size_t page_count;
     struct list_elem elem;
 };
+
+mapid_t mmap (int fd, void *addr);
+void munmap (mapid_t id);
 
 #endif /* vm/mmap.h */

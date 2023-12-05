@@ -19,9 +19,11 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
-#include "vm/mmap.h"
+#ifdef VM
 #include "vm/frame.h"
+#include "vm/mmap.h"
 #include "vm/page.h"
+#endif
 
 static thread_func start_process NO_RETURN;
 static struct file *load (const char *cmdline, void (**eip) (void), void **esp);
