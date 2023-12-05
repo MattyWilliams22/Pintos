@@ -102,9 +102,7 @@ struct thread
   struct list_elem allelem;           /* List element for all threads list. */
   struct list owned_locks;
   struct lock *required_lock;
-  void *esp;
-
-
+  
   /* Shared between thread.c and synch.c. */
   struct list_elem elem;              /* List element. */
 
@@ -119,6 +117,7 @@ struct thread
 
 #ifdef VM
     struct hash *spt;
+    void *esp;
 #endif
 
   /* Owned by thread.c. */

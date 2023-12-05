@@ -37,7 +37,9 @@ static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
   bool read_safely = true;
+#ifdef VM  
   thread_current()->esp = f->esp;
+#endif
   int system_call;
   read_safely &= read_write_user(f->esp, &system_call, sizeof(system_call));
   if (!read_safely) {

@@ -199,7 +199,7 @@ load_page (struct hash *page_table, void *user_page)
   return true;
 }
 
-void page_reclaim(struct hash *page_table)
-{
-  free_pt(page_table); 
-}
+// void page_reclaim(struct hash *page_table)
+// {
+//   free_pt(page_table); 
+// }

@@ -149,10 +149,6 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  if (!not_present) {
-    goto fail;
-  }
-
   /* Kernel Page faults. */
   if (!user)
   {
@@ -161,45 +157,25 @@ page_fault (struct intr_frame *f)
     return;
   }
 
+#ifdef VM
+  void *user_page = pg_round_down(fault_addr);
+  struct hash *spt = thread_current()->spt;
   //User fault, stack pointer from interrupt frame if user is true.
   //Kernel fault, stack pointer from current thread if user is not true.
   void *esp = user ? f->esp : thread_current()->esp;
 
-  // Address is below or at the current stack pointer 
-  // Address is 4 bytes below the stack pointer 
-  // Address is 32 bytes below the stack pointer
-  // Address is within the acceptable stack range
-  if (user) {
-   bool grow = (esp <= fault_addr || (esp - fault_addr == 4) ||
-               (esp - fault_addr == 32)) &&
-               (PHYS_BASE - MAX_STACK <= fault_addr && PHYS_BASE > fault_addr);
-   if (grow) {
-      // Allocate a new kernel page for the user page that needs to grow the stack
-      //Page directory entry to map the new user page to the allocated kernel page 
-      void *kpage = allocate_frame(PAL_USER | PAL_ZERO, pg_round_down(fault_addr));
-      if (kpage != NULL) {
-         bool success = pagedir_set_page(thread_current()->pagedir, pg_round_down(fault_addr), kpage, true);
-         if (success) {
-            thread_current()->esp = kpage + PGSIZE;
-            return;
-         } else {
-            palloc_free_page(kpage);
-            } 
-      } 
-   } else {
-      goto fail;
-      }
+  if (esp - MAX_FAULT <= fault_addr && PHYS_BASE - MAX_STACK_SIZE <= fault_addr) {
+    if (!search_pt (spt, user_page)) {
+      create_zero_page (spt, user_page);
+    }
   }
 
-
-  void *user_page = pg_round_down(fault_addr);
-  struct hash *spt = thread_current()->spt;
-  if (!load_page(spt, user_page)) {
-    goto fail;
+  if (load_page(spt, user_page)) {
+    return;
   }
-  return;
 
-fail:
+#endif
+
   printf ("Page fault at %p: %s error %s page in %s context.\n", fault_addr,
         not_present ? "not present" : "rights violation",
         write ? "writing" : "reading", user ? "user" : "kernel");
