@@ -710,6 +710,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->exec_file = NULL;
   list_init(&t->open_files);
   list_init(&t->child_bonds);
+  list_init(&t->mapped_files);
   t->pagedir = NULL;
   t->child_bond = NULL;
 #endif

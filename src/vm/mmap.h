@@ -1,7 +1,10 @@
-#ifndef MMAP_H
-#define MMAP_H
+#ifndef VM_MMAP_H
+#define VM_MMAP_H
 
+#include <list.h>
+#include <stdbool.h>
 #include "filesys/file.h"
+#include "userprog/process.h"
   
 typedef int mapid_t;
 
@@ -15,6 +18,6 @@ struct mapped_file
     void *addr;
     size_t page_count;
     struct list_elem elem;
-}
+};
 
-#endif /* MMAP_H */
+#endif /* vm/mmap.h */

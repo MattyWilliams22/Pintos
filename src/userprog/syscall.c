@@ -13,8 +13,9 @@
 #include "threads/vaddr.h"
 #include "threads/palloc.h"
 #include "threads/malloc.h"
+#include "vm/mmap.h"
 
-#define NUM_CALLS 13
+#define NUM_CALLS 15
 
 static int get_user (const uint8_t *uaddr);
 static bool read_write_user (void *src, void *dst, size_t bytes);
@@ -58,6 +59,7 @@ syscall_handler (struct intr_frame *f UNUSED)
   unsigned size;
   int fd;
   unsigned position;
+  void *addr;
   switch (system_call) {
     case SYS_HALT:
       halt();
@@ -203,6 +205,24 @@ syscall_handler (struct intr_frame *f UNUSED)
         thread_exit();
       }
       close(fd);
+      break;
+    
+    case SYS_MMAP:
+      read_safely &= read_write_user(f->esp + 4, &fd, sizeof(fd));
+      read_safely &= read_write_user(f->esp + 8, &addr, sizeof(addr));
+      if (!read_safely) {
+        thread_exit();
+      }
+      f->eax = mmap(fd, addr);
+      break;
+
+    case SYS_MUNMAP:
+      mapid_t mapid;
+      read_safely &= read_write_user(f->esp + 4, &mapid, sizeof(mapid));
+      if (!read_safely) {
+        thread_exit();
+      }
+      munmap(mapid);
       break;
   }
 

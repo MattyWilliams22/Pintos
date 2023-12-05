@@ -19,10 +19,9 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
-#ifdef VM
+#include "vm/mmap.h"
 #include "vm/frame.h"
 #include "vm/page.h"
-#endif
 
 static thread_func start_process NO_RETURN;
 static struct file *load (const char *cmdline, void (**eip) (void), void **esp);
@@ -376,6 +375,16 @@ process_exit (void)
     free (entry);
   }
 
+  /* Close all memory mapped files. */
+  for (struct list_elem *e = list_begin (&cur->mapped_files);
+       e != list_end (&cur->mapped_files); e = next)
+  {
+    struct mapped_file *entry = list_entry (e, struct mapped_file, elem);
+    file_close (entry->file);
+    next = list_next (e);
+    free (entry);
+  }
+
   if (cur->exec_file != NULL)
     file_close (cur->exec_file);
 
@@ -490,7 +499,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   init_pt (page_table);
   t->page_table = page_table;
-  list_init(&t->mapped_files);
 #endif
   if (t->pagedir == NULL) 
     goto done;
