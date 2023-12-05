@@ -35,6 +35,7 @@ init_pt (struct hash *page_table)
   hash_init(page_table, hash_page, compare_pages, NULL);
 }
 
+/* Frees a page from the supplemental page table by its hash_elem. */
 void
 remove_page (struct hash_elem *elem, void *aux UNUSED) 
 {
@@ -42,6 +43,7 @@ remove_page (struct hash_elem *elem, void *aux UNUSED)
   free(page); 
 }
 
+/* Frees the whole supplemental page table and its pages. */
 void
 free_pt (struct hash *page_table)
 {
@@ -49,6 +51,7 @@ free_pt (struct hash *page_table)
   free(page_table);
 }
 
+/* Finds the page with key == user_addr in the supplemental page table. */
 struct page *
 search_pt (struct hash *page_table, void *user_addr)
 {
@@ -60,6 +63,7 @@ search_pt (struct hash *page_table, void *user_addr)
   return e != NULL ? hash_entry (e, struct page, elem) : NULL;
 }
 
+/* Inserts a page into the supplemental page table. */
 bool
 insert_pt (struct hash *page_table, struct page *page)
 {
@@ -67,6 +71,7 @@ insert_pt (struct hash *page_table, struct page *page)
   return elem == NULL;
 }
 
+/* Removes a page from the supplemental page table. */
 struct page *
 remove_pt (struct hash *page_table, void *user_addr)
 {
@@ -78,6 +83,7 @@ remove_pt (struct hash *page_table, void *user_addr)
   return e != NULL ? hash_entry (e, struct page, elem) : NULL;
 }
 
+/* Creates a file page in the page table. */
 bool
 create_file_page (struct hash *page_table, void *user_page, struct file *id, off_t offset,
                    uint32_t read_bytes, uint32_t zero_bytes, bool writable,
@@ -109,6 +115,7 @@ create_file_page (struct hash *page_table, void *user_page, struct file *id, off
   return true;
 }
 
+/* Creates a frame page in the page table. */
 bool
 create_frame_page (struct hash *page_table, void *user_page, void *kernel_page)
 {
@@ -132,6 +139,7 @@ create_frame_page (struct hash *page_table, void *user_page, void *kernel_page)
   return true;
 }
 
+/* Creates a zero page in the page table. */
 bool
 create_zero_page (struct hash *page_table, void *user_addr)
 {
@@ -156,6 +164,7 @@ create_zero_page (struct hash *page_table, void *user_addr)
   return true;
 }
 
+/* Loads a page from the page_table. */
 bool
 load_page (struct hash *page_table, void *user_page)
 {
@@ -199,7 +208,7 @@ load_page (struct hash *page_table, void *user_page)
   return true;
 }
 
-/* Returns true if the page at address upage is free to use. */
+/* Checks if the page is available to use. */
 bool
 available_page (struct hash *page_table, void *upage) {
   bool in_user_space = is_user_vaddr(upage);

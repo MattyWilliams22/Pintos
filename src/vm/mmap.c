@@ -75,11 +75,8 @@ mapid_t mmap (int fd, void *addr)  {
     off_t offset = 0;
     for (size_t i = 0; i < page_count; i++) {
         size_t bytes_to_read = PGSIZE >= bytes_left ? PGSIZE : bytes_left;
-
-        /* Unsure what read_bytes and zero_bytes are in create_file_page function. */
         create_file_page(page_table, addr, new_mapped_file->file, offset,
                    bytes_to_read, PGSIZE - bytes_to_read, true, true);
-        
         addr += PGSIZE;
         offset += PGSIZE;
         bytes_left -= bytes_to_read;

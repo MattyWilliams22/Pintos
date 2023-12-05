@@ -13,6 +13,7 @@ bool compare_frames (const struct hash_elem *elem_a,
 unsigned hash_frame (const struct hash_elem *elem, void *aux UNUSED);
 static struct frame *get_frame_to_evict (void);
 
+/* One frame to be stored in the frame table. */
 struct frame {
   struct hash_elem elem;
   void *page_phys_addr;
@@ -20,8 +21,10 @@ struct frame {
   // struct thread* owner;
 };
 
+/* The frame table. */
 struct hash frame_table;
 
+/* Lock used to control access to the frame table. */
 struct lock frame_table_lock;
 
 bool
