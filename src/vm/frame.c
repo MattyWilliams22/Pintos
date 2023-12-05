@@ -2,13 +2,16 @@
 #include <hash.h>
 
 #include "vm/frame.h"
+#include "threads/thread.h"
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
+#include "userprog/pagedir.h"
 
 bool compare_frames (const struct hash_elem *elem_a, 
             const struct hash_elem *elem_b, void *aux UNUSED);
 unsigned hash_frame (const struct hash_elem *elem, void *aux UNUSED);
+static struct frame *get_frame_to_evict (void);
 
 struct frame {
   struct hash_elem elem;
@@ -63,18 +66,22 @@ allocate_frame (enum palloc_flags flags, void *user_addr)
   void *page_phys_addr = palloc_get_page(flags);
   if (page_phys_addr == NULL)
   {
-    PANIC ("No frames remaining");
+    struct frame *to_evict = get_frame_to_evict();
+    if (to_evict == NULL) {
+      PANIC ("No frame to evict. ");
+    }
+    free_frame(to_evict);
   }
 
-  struct frame *frame = malloc (sizeof (struct frame));
-  if (frame == NULL)
+  struct frame *to_add = malloc (sizeof (struct frame));
+  if (to_add == NULL)
   {
     PANIC ("Allocation of frame failed (malloc)");
   }
   // frame->owner = thread_current ();
-  frame->page_user_addr = user_addr;
-  frame->page_phys_addr = page_phys_addr;
-  hash_insert(&frame_table, &frame->elem);
+  to_add->page_user_addr = user_addr;
+  to_add->page_phys_addr = page_phys_addr;
+  hash_insert(&frame_table, &to_add->elem);
   release_frame_table_lock();
   return page_phys_addr;
 }
@@ -126,3 +133,22 @@ free_frame (void *frame_addr)
 
 //   release_frame_table_lock();
 // }
+
+/* Choose a frame from the frame table to evict. */
+static struct frame *
+get_frame_to_evict (void)
+{
+  struct hash_iterator i;
+  hash_first(&i, &frame_table);
+  while (hash_next(&i))
+  {
+    struct frame *frame = hash_entry(hash_cur(&i), struct frame, elem);
+
+    if (!pagedir_is_accessed(thread_current()->pagedir, frame->page_user_addr)) {
+      return frame;
+    }
+
+    pagedir_set_accessed(thread_current()->pagedir, frame->page_user_addr, false);
+  } 
+  return NULL;
+}
