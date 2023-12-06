@@ -28,12 +28,10 @@
 #include "userprog/gdt.h"
 #include "userprog/syscall.h"
 #include "userprog/tss.h"
-#else
-#include "tests/threads/tests.h"
-#endif
-#ifdef VM
 #include "devices/swap.h"
 #include "vm/frame.h"
+#else
+#include "tests/threads/tests.h"
 #endif
 #ifdef FILESYS
 #include "devices/block.h"
@@ -53,9 +51,7 @@ static bool format_filesys;
    overriding the defaults. */
 static const char *filesys_bdev_name;
 static const char *scratch_bdev_name;
-#ifdef VM
 static const char *swap_bdev_name;
-#endif
 #endif /* FILESYS */
 
 /* -ul: Maximum number of pages to put into palloc's user pool. */
@@ -102,6 +98,7 @@ main (void)
   palloc_init (user_page_limit);
   malloc_init ();
   paging_init ();
+  init_frame_table ();
 
   /* Segmentation. */
 #ifdef USERPROG
@@ -130,12 +127,7 @@ main (void)
   ide_init ();
   locate_block_devices ();
   filesys_init (format_filesys);
-#endif
-
-#ifdef VM
-  /* Initialise the swap disk */  
   swap_init ();
-  init_frame_table();
 #endif
 
   printf ("Boot complete.\n");
@@ -258,10 +250,6 @@ parse_options (char **argv)
         filesys_bdev_name = value;
       else if (!strcmp (name, "-scratch"))
         scratch_bdev_name = value;
-#ifdef VM
-      else if (!strcmp (name, "-swap"))
-        swap_bdev_name = value;
-#endif
 #endif
       else if (!strcmp (name, "-rs"))
         random_init (atoi (value));
@@ -270,6 +258,8 @@ parse_options (char **argv)
 #ifdef USERPROG
       else if (!strcmp (name, "-ul"))
         user_page_limit = atoi (value);
+      else if (!strcmp (name, "-swap"))
+        swap_bdev_name = value;
 #endif
       else
         PANIC ("unknown option `%s' (use -h for help)", name);
@@ -384,14 +374,12 @@ usage (void)
           "  -f                 Format file system device during startup.\n"
           "  -filesys=BDEV      Use BDEV for file system instead of default.\n"
           "  -scratch=BDEV      Use BDEV for scratch instead of default.\n"
-#ifdef VM
-          "  -swap=BDEV         Use BDEV for swap instead of default.\n"
-#endif
 #endif
           "  -rs=SEED           Set random number seed to SEED.\n"
           "  -mlfqs             Use multi-level feedback queue scheduler.\n"
 #ifdef USERPROG
           "  -ul=COUNT          Limit user memory to COUNT pages.\n"
+          "  -swap=BDEV         Use BDEV for swap instead of default.\n"
 #endif
           );
   shutdown_power_off ();
@@ -404,9 +392,7 @@ locate_block_devices (void)
 {
   locate_block_device (BLOCK_FILESYS, filesys_bdev_name);
   locate_block_device (BLOCK_SCRATCH, scratch_bdev_name);
-#ifdef VM
   locate_block_device (BLOCK_SWAP, swap_bdev_name);
-#endif
 }
 
 /* Figures out what block device to use for the given ROLE: the

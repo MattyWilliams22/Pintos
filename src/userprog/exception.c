@@ -149,15 +149,7 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  /* Kernel Page faults. */
-  if (!user)
-  {
-    f->eip = (void *) f->eax;
-    f->eax = 0xffffffff;
-    return;
-  }
-
-#ifdef VM
+#ifdef USERPROG
   struct thread *cur = thread_current ();
   if (cur->is_user)
     {
@@ -196,6 +188,14 @@ page_fault (struct intr_frame *f)
       /* Handle user-mode invalid access. */
       if (user)
         thread_exit ();
+
+      /* Kernel Page faults. */
+      if (!user)
+      {
+        f->eip = (void *) f->eax;
+        f->eax = 0xffffffff;
+        return;
+      }
     }
 
 #endif

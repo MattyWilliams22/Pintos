@@ -13,11 +13,9 @@
 #include "threads/vaddr.h"
 #include "threads/palloc.h"
 #include "threads/malloc.h"
-#ifdef VM
 #include "vm/frame.h"
 #include "vm/mmap.h"
 #include "vm/page.h"
-#endif
 
 #define NUM_CALLS 15
 
@@ -42,9 +40,8 @@ static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
   bool read_safely = true;
-#ifdef VM  
   thread_current()->esp = f->esp;
-#endif
+  
   int system_call;
   read_safely &= read_write_user(f->esp, &system_call, sizeof(system_call));
   if (!read_safely) {

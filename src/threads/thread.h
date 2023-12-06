@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <hash.h>
 #include "threads/fixed-point.h"
-#ifdef VM
+#ifdef USERPROG
 #include "vm/page.h"
 #endif
 
@@ -113,13 +113,10 @@ struct thread
    struct child_bond *child_bond;      /* Pointer to personal bond. */
    struct list child_bonds;            /* List of childrens bonds. */
    struct file *exec_file;             /* Current executable file */
-#endif
-
-#ifdef VM
-  struct page_table page_table;
-  struct list mapped_files;
-  void *esp;
-  bool is_user;
+   struct page_table page_table;
+   struct list mapped_files;
+   void *esp;
+   bool is_user;
 #endif
 
   /* Owned by thread.c. */

@@ -19,11 +19,9 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
-#ifdef VM
 #include "vm/frame.h"
 #include "vm/mmap.h"
 #include "vm/page.h"
-#endif
 
 static thread_func start_process NO_RETURN;
 static struct file *load (const char *cmdline, void (**eip) (void), void **esp);
@@ -200,6 +198,8 @@ start_process (void *setup_params_v)
   curr_thread->is_user = true;
   curr_thread->exec_file = NULL;
   curr_thread->esp = NULL;
+  curr_thread->child_bond = NULL;
+
 
   if(!init_pt (&curr_thread->page_table))
     goto fail;
@@ -320,30 +320,8 @@ void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
-  uint32_t *pd;
-
-#ifdef VM
   free_pt (&cur->page_table);
-#endif
 
-  /* Destroy the current process's page directory and switch back
-     to the kernel-only page directory. */
-  pd = cur->pagedir;
-  if (pd != NULL) 
-    {
-      /* Correct ordering here is crucial.  We must set
-         cur->pagedir to NULL before switching page directories,
-         so that a timer interrupt can't switch back to the
-         process page directory.  We must activate the base page
-         directory before destroying the process's page
-         directory, or our active page directory will be one
-         that's been freed (and cleared). */
-      cur->pagedir = NULL;
-      pagedir_activate (NULL);
-      pagedir_destroy (pd);
-      // frame_reclaim(cur);
-    } 
-    // page_reclaim(&cur->spt);
   /* Write error message to console and break connection with child_bond. */
   if (cur->child_bond != NULL) {
     printf("%s: exit(%d)\n", cur->name, cur->child_bond->exit_status);
@@ -352,6 +330,7 @@ process_exit (void)
     lock_acquire(&cur->child_bond->lock);
     process_lose_connection(cur->child_bond);
   }
+
   /* Let go of all connections to bonds with children. */
   struct list_elem *next;
   for (struct list_elem *e = list_begin(&cur->child_bonds);
@@ -390,6 +369,8 @@ process_exit (void)
 
   release_filesystem_lock ();
 }
+
+
 
 /* Sets up the CPU for running user code in the current
    thread.
@@ -483,19 +464,12 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 struct file *
 load (const char *file_name, void (**eip) (void), void **esp) 
 {
-  struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
   off_t file_ofs;
   bool success = false;
   int i;
 
-  /* Allocate and activate page directory. */
-  t->pagedir = pagedir_create ();
-
-  if (t->pagedir == NULL) 
-    goto done;
-  process_activate ();
   acquire_filesystem_lock ();
 
   /* Open executable file. */
@@ -670,7 +644,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (ofs % PGSIZE == 0);
 
   file_seek (file, ofs);
-  while (read_bytes > 0 || zero_bytes > 0) 
+  while (read_bytes + zero_bytes > 0) 
     {
       /* Calculate how to fill this page.
          We will read PAGE_READ_BYTES bytes from FILE
@@ -732,7 +706,7 @@ process_get_file(int fd)
     struct list_elem *e;
     struct open_file *of = NULL;
 
-    // Iterate over the list of open files to find the one with the matching file descriptor
+    /* Iterate over the list of open files to find the one with the matching file descriptor. */ 
     for (e = list_begin(&thread_current()->open_files); e != list_end(&thread_current()->open_files); e = list_next(e)) {
         struct open_file *entry = list_entry(e, struct open_file, elem);
         if (entry->fd == fd) {
@@ -741,6 +715,6 @@ process_get_file(int fd)
         }
     }
 
-    // Return the file associated with the file descriptor
+    /* Return the file associated with the file descriptor. */ 
     return of != NULL ? of->file : NULL;
 }
