@@ -13,8 +13,8 @@ struct frame {
   struct page_table *pt;
 };
 
-void init_frame_table(void);
-void *allocate_frame (bool pinned);
+void init_frame_table (void);
+struct frame *allocate_frame (bool pinned);
 void free_frame (struct frame *frame);
 
 void acquire_frame_table_lock (void);

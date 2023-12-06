@@ -6,11 +6,12 @@
 #include "vm/frame.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 #define MAP_FAILED ((mapid_t) -1)
 
 static bool
-mmap_compare (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+compare_mapid (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
   struct mapped_file *file_a = list_entry (a, struct mapped_file, elem);
   struct mapped_file *file_b = list_entry (b, struct mapped_file, elem);
@@ -53,7 +54,7 @@ mapid_t mmap (int fd, void *addr)  {
   }
   
   struct thread *current = thread_current();
-  struct hash *page_table = current->page_table;
+  struct page_table *page_table = &current->page_table;
   for (size_t i = 0; i < page_count; i++) {
     if (!available_page(page_table, i * PGSIZE + addr)) {
       return MAP_FAILED;
@@ -68,21 +69,17 @@ mapid_t mmap (int fd, void *addr)  {
   }
 
   /* Set initial values for the new mapped file. */
-
-    /* Always incrementing next_mapid by 1. 
-       May want to check for other unused mapids. */
-
-  struct list_elem *max = list_max (&current->mapped_files, mmap_compare, NULL);
+  struct list_elem *max = list_max (&current->mapped_files, compare_mapid, NULL);
   mapid_t mapid = (max == list_end (&current->mapped_files))
                    ? 1
-                   : (list_entry (max, struct mapped_file, elem)->id + 1);
+                   : (list_entry (max, struct mapped_file, elem)->mapid + 1);
 
   new_mapped_file->mapid = mapid;
   new_mapped_file->file = file;
   new_mapped_file->addr = addr;
   new_mapped_file->page_count = page_count;
 
-  /* Lazy load file. */
+  /* Create pages for all of the data in the file. */
   size_t bytes_left = file_size;
   off_t offset = 0;
   for (size_t i = 0; i < page_count; i++) {
@@ -102,10 +99,10 @@ mapid_t mmap (int fd, void *addr)  {
 void munmap(mapid_t id) {
   struct thread *current = thread_current();
   struct list *mapped_files = &current->mapped_files;
-
   struct list_elem *e;
   struct mapped_file *target_mapped_file = NULL;
 
+  /* Find the mapped file with the same mapid in the list of mapped files. */
   for (e = list_begin(mapped_files); e != list_end(mapped_files); e = list_next(e)) {
     struct mapped_file *mf = list_entry(e, struct mapped_file, elem);
     if (mf->mapid == id) {
@@ -119,8 +116,9 @@ void munmap(mapid_t id) {
     return; 
   }
 
+  /* Delete every page in the file. */
   for (size_t i = 0; i < target_mapped_file->page_count; i++)
-    page_table_uninstall (&current->page_table, target_mapped_file->addr + i * PGSIZE);
+    delete_page (&current->page_table, target_mapped_file->addr + i * PGSIZE);
 
   /* Close the actual file associated with the mapped file. */
   acquire_filesystem_lock();

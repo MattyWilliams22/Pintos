@@ -2,9 +2,11 @@
 #include <hash.h>
 
 #include "vm/frame.h"
+#include "vm/page.h"
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
+#include "userprog/pagedir.h"
 
 bool compare_frames (const struct hash_elem *elem_a, 
             const struct hash_elem *elem_b, void *aux UNUSED);

@@ -11,6 +11,7 @@
 #include "userprog/pagedir.h"
 #include "threads/palloc.h"
 #include "devices/swap.h"
+#include "userprog/process.h"
 
 /* Compare hash key of two pages. */
 bool
@@ -77,7 +78,7 @@ free_pt (struct page_table *page_table)
     pagedir_activate (NULL);
   }
 
-  hash_destroy(page_table, remove_page);
+  hash_destroy(&page_table->spt, remove_page);
 
   if (page_dir != NULL)
   {
@@ -89,13 +90,13 @@ free_pt (struct page_table *page_table)
 }
 
 struct page *
-search_pt (struct hash *page_table, void *user_addr)
+search_pt (struct hash *spt, void *user_addr)
 {
   struct page p;
   struct hash_elem *e;
 
   p.key = user_addr;
-  e = hash_find (page_table, &p.elem);
+  e = hash_find (spt, &p.elem);
   return e != NULL ? hash_entry (e, struct page, elem) : NULL;
 }
 
@@ -104,7 +105,7 @@ get_page (struct page_table *page_table, void *key, bool create)
 {
   bool ft_locked = curr_has_ft_lock ();
 
-  struct page *page = find_page (page_table, key);
+  struct page *page = search_pt (&page_table->spt, key);
 
   if (page == NULL)
   {
@@ -128,7 +129,7 @@ get_page (struct page_table *page_table, void *key, bool create)
 
     struct page *res = get_page (page_table, key, create);
 
-    frame_table_release_lock ();
+    release_frame_table_lock ();
     return res;
   }
 
@@ -216,8 +217,7 @@ delete_page (struct page_table *page_table, void *user_addr)
 
 /* Returns true if the page at address user_page is free to use. */
 bool
-available_page (struct hash *page_table, void *user_page) {
-  
+available_page (struct page_table *page_table, void *user_page) {
   return is_user_vaddr (user_page) && !already_mapped (page_table, user_page)
     && !in_stack (user_page);
 }
@@ -232,7 +232,7 @@ bool
 already_mapped (struct page_table *page_table, void *user_page)
 {
   lock_acquire (&page_table->lock);
-  struct page *page = find_page (page_table, user_page);
+  struct page *page = search_pt (&page_table->spt, user_page);
   lock_release (&page_table->lock);
   return page != NULL;
 }
@@ -249,24 +249,24 @@ make_present (struct page_table *pt, void *user_page)
   acquire_frame_table_lock ();
   lock_acquire (&pt->lock);
 
-  struct page *page = find_page (pt, user_page);
+  struct page *page = search_pt (&pt->spt, user_page);
   if (page == NULL)
   {
-    frame_table_release_lock ();
+    release_frame_table_lock ();
     lock_release (&pt->lock);
     return false;
   }
   if (page->present)
   {
-    frame_table_release_lock ();
+    release_frame_table_lock ();
     lock_release (&pt->lock);
     return true;
   }
 
-  struct frame *frame = frame_table_alloc (false);
+  struct frame *frame = allocate_frame (false);
   if (frame == NULL)
   {
-    frame_table_release_lock ();
+    release_frame_table_lock ();
     lock_release (&pt->lock);
     return false;
   }
@@ -279,7 +279,7 @@ make_present (struct page_table *pt, void *user_page)
     if (old_pt != pt)
       lock_acquire (&old_pt->lock);
 
-    struct page *eviction_page = find_page (old_pt, old_user_page);
+    struct page *eviction_page = search_pt (&old_pt->spt, old_user_page);
 
     frame->pt = pt;
     frame->page_user_addr = user_page;
@@ -332,7 +332,7 @@ swap_page_in (struct page *p, struct frame *frame)
       break;
 
     case SWAP:
-      swap_page_in (p->frame->page_phys_addr, p->swap);
+      swap_in (p->frame->page_phys_addr, p->swap);
       break;
   }
 }
@@ -348,13 +348,13 @@ swap_page_out (struct page *p, bool dirty)
       if (dirty)
       {
         p->type = SWAP;
-        p->swap = swap_page_out (p->frame->page_phys_addr);
+        p->swap = swap_out (p->frame->page_phys_addr);
       }
       break;
 
     case SWAP:
       p->type = SWAP;
-      p->swap = swap_page_out (p->frame->page_phys_addr);
+      p->swap = swap_out (p->frame->page_phys_addr);
       break;
 
     case FILE:
@@ -367,7 +367,7 @@ swap_page_out (struct page *p, bool dirty)
       else if (dirty)
       {
         p->type = SWAP;
-        p->swap = swap_page_out (p->frame->page_phys_addr);
+        p->swap = swap_out (p->frame->page_phys_addr);
       }
       break;
   }

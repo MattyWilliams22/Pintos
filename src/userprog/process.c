@@ -201,7 +201,7 @@ start_process (void *setup_params_v)
   curr_thread->exec_file = NULL;
   curr_thread->esp = NULL;
 
-  if(!init_pt (curr_thread->page_table))
+  if(!init_pt (&curr_thread->page_table))
     goto fail;
 
   process_activate ();
@@ -323,8 +323,7 @@ process_exit (void)
   uint32_t *pd;
 
 #ifdef VM
-  free_pt (cur->page_table);
-  cur->page_table = NULL;
+  free_pt (&cur->page_table);
 #endif
 
   /* Destroy the current process's page directory and switch back
@@ -681,7 +680,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       
       /* Check if virtual page already allocated */
       struct thread *t = thread_current ();
-      struct page_table *pt = t->page_table;
+      struct page_table *pt = &t->page_table;
 
       bool res = (page_read_bytes == 0) ? 
                 create_zero_page (pt, upage, writable)
