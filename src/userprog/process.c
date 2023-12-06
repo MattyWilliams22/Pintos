@@ -384,6 +384,17 @@ process_exit (void)
     free (entry);
   }
 
+  /* Close all memory mapped files. */
+  for (struct list_elem *e = list_begin (&cur->mapped_files);
+       e != list_end (&cur->mapped_files); e = next)
+  {
+    struct mapped_file *entry = list_entry (e, struct mapped_file, elem);
+    file_close (entry->file);
+    next = list_next (e);
+    free (entry);
+  }
+
+
   if (cur->exec_file != NULL)
     file_close (cur->exec_file);
 
