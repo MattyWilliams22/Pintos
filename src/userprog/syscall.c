@@ -27,7 +27,6 @@ static void syscall_handler (struct intr_frame *);
 int open_file_by_name(char *file_name);
 int open (char *file);
 struct file *get_open_file(int fd);
-void close_file_by_fd(int fd);
 struct file *get_file(int fd);
 
 void
@@ -134,7 +133,7 @@ syscall_handler (struct intr_frame *f UNUSED)
         palloc_free_page (file_copy);
         thread_exit ();
       }
-      f->eax = remove(file);
+      f->eax = process_open_file(file_copy);
       palloc_free_page (file_copy);
       break;
 
@@ -438,30 +437,12 @@ tell (int fd)
   }
 }
 
-/* Closes the open file fd. */
-void
-close_file_by_fd(int fd) 
-{
-  struct list *open_files = &thread_current ()->open_files;
-  for (struct list_elem *e = list_begin(open_files); e != list_end(open_files); e = list_next(e))
-  {
-    struct open_file *open_file = list_entry(e, struct open_file, elem);
-    if (open_file->fd == fd)
-    {
-      list_remove(&open_file->elem);
-      file_close(open_file->file);
-      free(open_file);
-      return;
-    }
-  }
-}
-
 /* Closes file descriptor fd. */
 void
 close (int fd) 
 {
   acquire_filesystem_lock();
-  close_file_by_fd(fd);
+  process_close_file(fd);
   release_filesystem_lock();
 }
 
