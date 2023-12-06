@@ -49,6 +49,8 @@ allocate_frame (bool pinned)
   {
     return NULL;
   }
+  
+  list_push_back(&frame_table, &frame->elem);
   frame->page_user_addr = NULL;
   frame->page_phys_addr = page_phys_addr;
   frame->pinned = pinned;
