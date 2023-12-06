@@ -251,56 +251,56 @@ make_present (struct page_table *pt, void *user_page)
 
   struct page *page = find_page (pt, user_page);
   if (page == NULL)
-    {
-      frame_table_release_lock ();
-      lock_release (&pt->lock);
-      return false;
-    }
+  {
+    frame_table_release_lock ();
+    lock_release (&pt->lock);
+    return false;
+  }
   if (page->present)
-    {
-      frame_table_release_lock ();
-      lock_release (&pt->lock);
-      return true;
-    }
+  {
+    frame_table_release_lock ();
+    lock_release (&pt->lock);
+    return true;
+  }
 
   struct frame *frame = frame_table_alloc (false);
   if (frame == NULL)
-    {
-      frame_table_release_lock ();
-      lock_release (&pt->lock);
-      return false;
-    }
+  {
+    frame_table_release_lock ();
+    lock_release (&pt->lock);
+    return false;
+  }
 
   if (frame->pt != NULL)
-    {
-      struct page_table *old_pt = frame->pt;
-      void *old_user_page = frame->page_user_addr;
+  {
+    struct page_table *old_pt = frame->pt;
+    void *old_user_page = frame->page_user_addr;
 
-      if (old_pt != pt)
-        lock_acquire (&old_pt->lock);
+    if (old_pt != pt)
+      lock_acquire (&old_pt->lock);
 
-      struct page *eviction_page = find_page (old_pt, old_user_page);
+    struct page *eviction_page = find_page (old_pt, old_user_page);
 
-      frame->pt = pt;
-      frame->page_user_addr = user_page;
+    frame->pt = pt;
+    frame->page_user_addr = user_page;
 
-      release_frame_table_lock ();
+    release_frame_table_lock ();
 
-      pagedir_clear_page (old_pt->pd, old_user_page);
-      bool dirty = pagedir_is_dirty (old_pt->pd, old_user_page);
+    pagedir_clear_page (old_pt->pd, old_user_page);
+    bool dirty = pagedir_is_dirty (old_pt->pd, old_user_page);
 
-      swap_page_out (eviction_page, dirty);
+    swap_page_out (eviction_page, dirty);
 
-      if (old_pt != pt)
-        lock_release (&old_pt->lock);
-    }
+    if (old_pt != pt)
+      lock_release (&old_pt->lock);
+  }
   else
-    {
-      frame->pt = pt;
-      frame->page_user_addr = user_page;
+  {
+    frame->pt = pt;
+    frame->page_user_addr = user_page;
 
-      release_frame_table_lock ();
-    }
+    release_frame_table_lock ();
+  }
 
   swap_page_in (page, frame);
 
@@ -346,10 +346,10 @@ swap_page_out (struct page *p, bool dirty)
   {
     case ZERO:
       if (dirty)
-        {
-          p->type = SWAP;
-          p->swap = swap_page_out (p->frame->page_phys_addr);
-        }
+      {
+        p->type = SWAP;
+        p->swap = swap_page_out (p->frame->page_phys_addr);
+      }
       break;
 
     case SWAP:
@@ -359,16 +359,16 @@ swap_page_out (struct page *p, bool dirty)
 
     case FILE:
       if (dirty && p->write_back)
-        {
-          acquire_filesystem_lock ();
-          file_write_at (p->file, p->frame->page_phys_addr, p->length, p->offset);
-          release_filesystem_lock ();
-        }
+      {
+        acquire_filesystem_lock ();
+        file_write_at (p->file, p->frame->page_phys_addr, p->length, p->offset);
+        release_filesystem_lock ();
+      }
       else if (dirty)
-        {
-          p->type = SWAP;
-          p->swap = swap_page_out (p->frame->page_phys_addr);
-        }
+      {
+        p->type = SWAP;
+        p->swap = swap_page_out (p->frame->page_phys_addr);
+      }
       break;
   }
 }
@@ -388,11 +388,11 @@ page_destroy (struct page *p, bool dirty)
 
     case FILE:
       if (p->present && dirty && p->write_back)
-        {
-          acquire_filesystem_lock ();
-          file_write_at (p->file, p->frame->page_phys_addr, p->length, p->offset);
-          release_filesystem_lock ();
-        }
+      {
+        acquire_filesystem_lock ();
+        file_write_at (p->file, p->frame->page_phys_addr, p->length, p->offset);
+        release_filesystem_lock ();
+      }
       break;
   }
 }

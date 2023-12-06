@@ -158,21 +158,45 @@ page_fault (struct intr_frame *f)
   }
 
 #ifdef VM
-  void *user_page = pg_round_down(fault_addr);
-  struct hash *page_table = thread_current()->page_table;
-  //User fault, stack pointer from interrupt frame if user is true.
-  //Kernel fault, stack pointer from current thread if user is not true.
-  void *esp = user ? f->esp : thread_current()->esp;
+  struct thread *cur = thread_current ();
+  if (cur->is_user)
+    {
+      struct page_table *pt = &cur->page_table;
+      void *page = pg_round_down (fault_addr);
 
-  if (esp - MAX_FAULT <= fault_addr && PHYS_BASE - MAX_STACK_SIZE <= fault_addr) {
-    if (!search_pt (page_table, user_page)) {
-      create_zero_page (page_table, user_page);
+      /* Page is not present. */
+      if (is_user_vaddr (page) && not_present)
+      {
+        if (already_mapped (pt, page))
+        {
+          if (!make_present (pt, page))
+            thread_exit ();
+          return;
+        }
+
+        /* Detect stack growth. */
+        bool is_stack_growth = false;
+        void *esp = user ? f->esp : thread_current ()->esp;
+
+        if (in_stack (page) && esp - MAX_FAULT <= fault_addr)
+          is_stack_growth = true;
+
+        if (in_stack (page) && thread_current ()->child_bond == NULL)
+          is_stack_growth = true;
+
+        /* Handle stack growth. */
+        if (is_stack_growth)
+        {
+          if (!create_zero_page (pt, page, true) || !make_present (pt, page))
+            thread_exit ();
+          return;
+        }
+      }
+
+      /* Handle user-mode invalid access. */
+      if (user)
+        thread_exit ();
     }
-  }
-
-  if (load_page(page_table, user_page)) {
-    return;
-  }
 
 #endif
 

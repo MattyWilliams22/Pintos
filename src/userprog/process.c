@@ -115,11 +115,7 @@ process_execute (char *cmd_line)
 
   /* Make a copy of cmd_line.
      Otherwise there's a race between the caller and load(). */
-#ifdef VM
-  cmd_line_copy = allocate_frame (0, NULL);
-#else
   cmd_line_copy = palloc_get_page (0);
-#endif
   if (cmd_line_copy == NULL)
     goto fail;
   strlcpy (cmd_line_copy, cmd_line, PGSIZE);
@@ -163,20 +159,13 @@ process_execute (char *cmd_line)
     goto fail;
   }
 
-#ifdef VM
-  free_frame (cmd_line_copy);
-#else
+
   palloc_free_page (cmd_line_copy);
-#endif
   free(setup_params);
   return tid;
 fail:
   if (cmd_line_copy != NULL)
-#ifdef VM
-    free_frame (cmd_line_copy);
-#else
     palloc_free_page (cmd_line_copy);
-#endif
   if (child_bond != NULL)
     {
       list_remove (&child_bond->elem);
@@ -207,6 +196,15 @@ start_process (void *setup_params_v)
   struct process_setup_params *setup_params = (struct process_setup_params *) setup_params_v;
   struct intr_frame if_;
   char **argument_values = NULL;
+
+  curr_thread->is_user = true;
+  curr_thread->exec_file = NULL;
+  curr_thread->esp = NULL;
+
+  if(!init_pt (curr_thread->page_table))
+    goto fail;
+
+  process_activate ();
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -496,13 +494,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
 
-#ifdef VM
-  struct hash *page_table = malloc (sizeof (struct hash));
-  if (page_table == NULL)
-    goto done;
-  init_pt (page_table);
-  t->page_table = page_table;
-#endif
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
@@ -690,44 +681,19 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       
       /* Check if virtual page already allocated */
       struct thread *t = thread_current ();
-      uint8_t *kpage = pagedir_get_page (t->pagedir, upage);
-      
-      if (kpage == NULL){
-        /* Get a new page of memory. */
-#ifdef VM
-        kpage = allocate_frame (PAL_USER, upage);
-#else
-        kpage = palloc_get_page (PAL_USER);
-#endif
-        if (kpage == NULL){
-          return false;
-        }
-        
-        /* Add the page to the process's address space. */
-        if (!install_page (upage, kpage, writable)) 
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }     
-        
-      } else {
-        
-        /* Check if writable flag for the page should be updated */
-        if(writable && !pagedir_is_writable(t->pagedir, upage)){
-          pagedir_set_writable(t->pagedir, upage, writable); 
-        }
-      }
+      struct page_table *pt = t->page_table;
 
-      /* Load data into the page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes){
-        return false; 
-      }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
+      bool res = (page_read_bytes == 0) ? 
+                create_zero_page (pt, upage, writable)
+                : create_file_page (pt, upage, file, ofs, page_read_bytes, writable, false);
+      if (!res)
+        return false;
 
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;
+      ofs += PGSIZE;
     }
   return true;
 }
@@ -737,28 +703,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp) 
 {
-  uint8_t *kpage;
-  bool success = false;
-
-#ifdef VM
-  kpage = allocate_frame (PAL_USER | PAL_ZERO, ((uint8_t *) PHYS_BASE) - PGSIZE);
-#else
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-#endif
-  if (kpage != NULL)
-  {
-    success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-    if (success) {
-      *esp = PHYS_BASE;
-    } else {
-#ifdef VM
-        free_frame (kpage);
-#else
-        palloc_free_page (kpage);
-#endif
-    }
-  }
-  return success;
+  *esp = PHYS_BASE;
+  return true;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel

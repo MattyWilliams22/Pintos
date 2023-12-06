@@ -116,9 +116,10 @@ struct thread
 #endif
 
 #ifdef VM
-  struct hash *page_table;
+  struct page_table page_table;
   struct list mapped_files;
   void *esp;
+  bool is_user;
 #endif
 
   /* Owned by thread.c. */
