@@ -99,6 +99,7 @@ main (void)
   malloc_init ();
   paging_init ();
   init_frame_table ();
+  random_init(42);
 
   /* Segmentation. */
 #ifdef USERPROG

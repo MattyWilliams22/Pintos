@@ -23,5 +23,7 @@ struct open_file
 };
 
 struct file *process_get_file(int fd);
+int process_open_file (const char *file_name);
+void process_close_file (int fd);
 
 #endif /* userprog/process.h */

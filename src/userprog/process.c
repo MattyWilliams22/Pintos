@@ -165,10 +165,10 @@ fail:
   if (cmd_line_copy != NULL)
     palloc_free_page (cmd_line_copy);
   if (child_bond != NULL)
-    {
-      list_remove (&child_bond->elem);
-      free (child_bond);
-    }
+  {
+    list_remove (&child_bond->elem);
+    free (child_bond);
+  }
   if (setup_params != NULL)
     free (setup_params);
   return TID_ERROR;
@@ -277,8 +277,6 @@ fail:
   if (argument_values != NULL)
     free (argument_values);
 
-  curr_thread->child_bond = setup_params->child_bond;
-  curr_thread->child_bond->connections++;
   ASSERT (setup_params->child_bond->child_tid == TID_ERROR);
   sema_up (&curr_thread->child_bond->sema);
 
@@ -643,7 +641,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  file_seek (file, ofs);
   while (read_bytes + zero_bytes > 0) 
     {
       /* Calculate how to fill this page.
@@ -680,39 +677,70 @@ setup_stack (void **esp)
   return true;
 }
 
-/* Adds a mapping from user virtual address UPAGE to kernel
-   virtual address KPAGE to the page table.
-   If WRITABLE is true, the user process may modify the page;
-   otherwise, it is read-only.
-   UPAGE must not already be mapped.
-   KPAGE should probably be a page obtained from the user pool
-   with palloc_get_page().
-   Returns true on success, false if UPAGE is already mapped or
-   if memory allocation fails. */
-static bool
-install_page (void *upage, void *kpage, bool writable)
-{
-  struct thread *t = thread_current ();
-
-  /* Verify that there's not already a page at that virtual
-     address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
-}
-
 struct file* 
 process_get_file(int fd) 
 {
-    struct list_elem *e;
-    struct open_file *of = NULL;
+  struct list *files = &thread_current ()->open_files;
+  for (struct list_elem *e = list_begin (files); e != list_end (files); e = list_next (e))
+  {
+    struct open_file *entry = list_entry (e, struct open_file, elem);
+    if (entry->fd == fd)
+      return entry->file;
+  }
 
-    /* Iterate over the list of open files to find the one with the matching file descriptor. */ 
-    for (e = list_begin(&thread_current()->open_files); e != list_end(&thread_current()->open_files); e = list_next(e)) {
-        of = list_entry(e, struct open_file, elem);
-        if (of->fd == fd) {
-            return of->file;
+  return NULL;
+}
+
+static bool
+compare_files (const struct list_elem *a, const struct list_elem *b,
+               void *aux UNUSED)
+{
+  struct open_file *fa = list_entry (a, struct open_file, elem);
+  struct open_file *fb = list_entry (b, struct open_file, elem);
+  return fa->fd < fb->fd;
+}
+
+int
+process_open_file (const char *file_name)
+{
+  struct open_file *open_file
+      = (struct open_file *) malloc (sizeof (struct open_file));
+  if (open_file == NULL)
+    return -1;
+
+  struct file *file = filesys_open (file_name);
+  if (file == NULL)
+  {
+    free (open_file);
+    return -1;
+  }
+
+  struct list *entries = &thread_current ()->open_files;
+  struct list_elem *max = list_max (entries, compare_files, NULL);
+  int fd = (max == list_end (entries))
+                ? (STDOUT_FILENO + 1)
+                : (list_entry (max, struct open_file, elem)->fd + 1);
+
+  open_file->fd = fd;
+  open_file->file = file;
+  list_push_back (entries, &open_file->elem);
+  return fd;
+}
+
+void
+process_close_file (int fd)
+{
+  struct list *entries = &thread_current ()->open_files;
+  for (struct list_elem *e = list_begin (entries); e != list_end (entries);
+       e = list_next (e))
+    {
+      struct open_file *entry = list_entry (e, struct open_file, elem);
+      if (entry->fd == fd)
+        {
+          list_remove (&entry->elem);
+          file_close (entry->file);
+          free (entry);
+          return;
         }
     }
-    
-    return NULL;
 }
