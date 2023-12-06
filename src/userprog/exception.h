@@ -9,7 +9,4 @@
 void exception_init (void);
 void exception_print_stats (void);
 
-#define MAX_STACK_SIZE (8 * 1024 * 1024) /* 8mb */
-#define MAX_FAULT 32
-
 #endif /* userprog/exception.h */

@@ -118,7 +118,6 @@ struct thread
 #ifdef VM
   struct hash *page_table;
   struct list mapped_files;
-  int next_mapid;
   void *esp;
 #endif
 

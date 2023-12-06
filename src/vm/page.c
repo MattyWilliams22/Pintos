@@ -1,5 +1,6 @@
 #include <string.h>
 #include <debug.h>
+#include <stdio.h>
 
 #include "threads/malloc.h"
 #include "threads/synch.h"
@@ -9,6 +10,7 @@
 #include "vm/page.h"
 #include "userprog/pagedir.h"
 #include "threads/palloc.h"
+#include "devices/swap.h"
 
 /* Compare hash key of two pages. */
 bool
@@ -29,24 +31,61 @@ hash_page (const struct hash_elem *elem, void *aux UNUSED)
 }
 
 /* Initializes supplemental page table. */
-void
-init_pt (struct hash *page_table)
+bool
+init_pt (struct page_table *page_table)
 {
-  hash_init(page_table, hash_page, compare_pages, NULL);
+  lock_init (&page_table->lock);
+
+  if ((page_table->pd = pagedir_create ()) == NULL)
+  {
+    return false;
+  }
+
+  if (!hash_init (&page_table->spt, hash_page, compare_pages, NULL))
+  {
+    return false;
+  }
+  return true;
 }
 
 void
 remove_page (struct hash_elem *elem, void *aux UNUSED) 
 {
   struct page *page = hash_entry(elem, struct page, elem);
-  free(page); 
+  uint32_t *pd = (uint32_t *) aux;
+
+  bool present_status = page->present;
+  bool dirty = false;
+  if (present_status)
+    dirty = pagedir_is_dirty (pd, page->key);
+  page_destroy (page, dirty);
+  if (present_status)
+    free_frame (page->frame);
+  free (page);
 }
 
 void
-free_pt (struct hash *page_table)
+free_pt (struct page_table *page_table)
 {
+  acquire_frame_table_lock ();
+  lock_acquire (&page_table->lock);
+
+  uint32_t *page_dir = page_table->pd;
+  if (page_dir != NULL)
+  {
+    page_table->pd = NULL;
+    pagedir_activate (NULL);
+  }
+
   hash_destroy(page_table, remove_page);
-  free(page_table);
+
+  if (page_dir != NULL)
+  {
+    pagedir_destroy (page_dir);
+  }
+
+  release_frame_table_lock ();
+  lock_destroy (&page_table->lock);
 }
 
 struct page *
@@ -60,151 +99,300 @@ search_pt (struct hash *page_table, void *user_addr)
   return e != NULL ? hash_entry (e, struct page, elem) : NULL;
 }
 
-bool
-insert_pt (struct hash *page_table, struct page *page)
-{
-  struct hash_elem *elem = hash_insert (page_table, &page->elem);
-  return elem == NULL;
-}
-
 struct page *
-remove_pt (struct hash *page_table, void *user_addr)
+get_page (struct page_table *page_table, void *key, bool create)
 {
-  struct page page;
-  struct hash_elem *e;
+  bool ft_locked = curr_has_ft_lock ();
 
-  page.key = user_addr;
-  e = hash_delete (page_table, &page.elem);
-  return e != NULL ? hash_entry (e, struct page, elem) : NULL;
-}
+  struct page *page = find_page (page_table, key);
 
-bool
-create_file_page (struct hash *page_table, void *user_page, struct file *id, off_t offset,
-                   uint32_t read_bytes, uint32_t zero_bytes, bool writable,
-                   bool new)
-{
-  struct page *page = new ? malloc (sizeof (struct page))
-                          : search_pt (page_table, user_page);
   if (page == NULL)
   {
+    if (!create)
+      return NULL;
+
+    struct page *res = malloc (sizeof (struct page));
+    if (res == NULL)
+      return NULL;
+
+    res->key = key;
+    hash_insert (&page_table->spt, &res->elem);
+    return res;
+  }
+
+  if (page->present && !ft_locked)
+  {
+    lock_release (&page_table->lock);
+    acquire_frame_table_lock ();
+    lock_acquire (&page_table->lock);
+
+    struct page *res = get_page (page_table, key, create);
+
+    frame_table_release_lock ();
+    return res;
+  }
+
+  bool present_status = page->present;
+  bool dirty = false;
+  if (present_status)
+    {
+      pagedir_clear_page (page_table->pd, key);
+      dirty = pagedir_is_dirty (page_table->pd, key);
+    }
+  page_destroy (page, dirty);
+  if (present_status)
+    free_frame (page->frame);
+  return page;
+}
+
+bool
+create_file_page (struct page_table *page_table, void *user_page, struct file *id, off_t offset,
+                   uint32_t length, bool writable, bool write_back)
+{
+  lock_acquire (&page_table->lock);
+
+  struct page *page = get_page (page_table, user_page, true);
+  if (page == NULL)
+  {
+    lock_release (&page_table->lock);
     return false;
   }
 
   page->key = user_page;
-  page->kernel_addr = NULL;
   page->file = id;
   page->offset = offset;
-  page->read_bytes = read_bytes;
-  page->zero_bytes = zero_bytes;
   page->writable = writable;
   page->type = FILE;
+  page->present = false;
+  page->write_back = write_back;
+  page->length = length;
 
-  if (new)
-    if (!insert_pt (page_table, page))
-      {
-        free (page);
-        return false;
-      }
+  lock_release (&page_table->lock);
 
   return true;
 }
 
 bool
-create_frame_page (struct hash *page_table, void *user_page, void *kernel_page)
+create_zero_page (struct page_table *page_table, void *user_addr, bool writable)
 {
+  lock_acquire (&page_table->lock);
+
   struct page *page = malloc (sizeof (struct page));
   if (page == NULL)
   {
-    return false;
-  }
-
-  page->key = user_page;
-  page->kernel_addr = kernel_page;
-  page->type = FRAME;
-  page->writable = true;
-  page->file = NULL;
-
-  if (!insert_pt (page_table, page))
-    {
-      free (page);
-      return false;
-    }
-  return true;
-}
-
-bool
-create_zero_page (struct hash *page_table, void *user_addr)
-{
-  struct page *page = malloc (sizeof (struct page));
-  if (page == NULL)
-  {
+    lock_release (&page_table->lock);
     return false;
   }
 
   page->key = user_addr;
-  page->kernel_addr = NULL;
+  page->present = false;
   page->type = ZERO;
-  page->writable = true;
-  page->file = NULL;
+  page->writable = writable;
 
+  lock_release (&page_table->lock);
 
-  if (!insert_pt (page_table, page))
-  {
-    free (page);
-    return false;
-  }
   return true;
 }
 
 bool
-load_page (struct hash *page_table, void *user_page)
+delete_page (struct page_table *page_table, void *user_addr)
 {
-  struct page *page = search_pt (page_table, user_page);
+  lock_acquire (&page_table->lock);
+
+  struct page *page = get_page (page_table, user_addr, false);
   if (page == NULL)
   {
-    return false;
-  }
-  void *kernel_page = allocate_frame (PAL_USER, user_page);
-  if (kernel_page == NULL)
-  {
+    lock_release (&page_table->lock);
     return false;
   }
 
-  switch (page->type)
-    {
-    case ZERO:
-      memset (kernel_page, 0, PGSIZE);
-      break;
-    case FILE:
-      if (file_read_at (page->file, kernel_page, page->read_bytes, page->offset) != (int) page->read_bytes)
-      {
-        free_frame (kernel_page);
-        return false;
-      }
-      memset (kernel_page + page->read_bytes, 0, page->zero_bytes);
-      break;
-    case FRAME:
-      break;
-    default:
-      PANIC ("Loading page of unknown type");
-    }
+  hash_delete (&page_table->spt, &page->elem);
+  free (page);
 
-  if (!pagedir_set_page (thread_current ()->pagedir, user_page, kernel_page, page->writable))
-  {
-    free_frame (kernel_page);
-    return false;
-  }
-  page->kernel_addr = kernel_page;
-  page->type = FRAME;
+  lock_release (&page_table->lock);
+
   return true;
 }
 
-/* Returns true if the page at address upage is free to use. */
+/* Returns true if the page at address user_page is free to use. */
 bool
-available_page (struct hash *page_table, void *upage) {
-  bool in_user_space = is_user_vaddr(upage);
-  bool in_stack = (upage < PHYS_BASE) && (PHYS_BASE - STACK_LIMIT <= upage);
-  struct page *page = search_pt(page_table, upage);
-  bool already_mapped = page != NULL;
-  return in_user_space && !in_stack && !already_mapped;
+available_page (struct hash *page_table, void *user_page) {
+  
+  return is_user_vaddr (user_page) && !already_mapped (page_table, user_page)
+    && !in_stack (user_page);
+}
+
+void
+activate_pt (struct page_table *page_table)
+{
+  pagedir_activate (page_table->pd);
+}
+
+bool
+already_mapped (struct page_table *page_table, void *user_page)
+{
+  lock_acquire (&page_table->lock);
+  struct page *page = find_page (page_table, user_page);
+  lock_release (&page_table->lock);
+  return page != NULL;
+}
+
+bool
+in_stack (void *user_page)
+{
+  return (user_page < PHYS_BASE) && (PHYS_BASE - STACK_LIMIT <= user_page);
+}
+
+bool
+make_present (struct page_table *pt, void *user_page)
+{
+  acquire_frame_table_lock ();
+  lock_acquire (&pt->lock);
+
+  struct page *page = find_page (pt, user_page);
+  if (page == NULL)
+    {
+      frame_table_release_lock ();
+      lock_release (&pt->lock);
+      return false;
+    }
+  if (page->present)
+    {
+      frame_table_release_lock ();
+      lock_release (&pt->lock);
+      return true;
+    }
+
+  struct frame *frame = frame_table_alloc (false);
+  if (frame == NULL)
+    {
+      frame_table_release_lock ();
+      lock_release (&pt->lock);
+      return false;
+    }
+
+  if (frame->pt != NULL)
+    {
+      struct page_table *old_pt = frame->pt;
+      void *old_user_page = frame->page_user_addr;
+
+      if (old_pt != pt)
+        lock_acquire (&old_pt->lock);
+
+      struct page *eviction_page = find_page (old_pt, old_user_page);
+
+      frame->pt = pt;
+      frame->page_user_addr = user_page;
+
+      release_frame_table_lock ();
+
+      pagedir_clear_page (old_pt->pd, old_user_page);
+      bool dirty = pagedir_is_dirty (old_pt->pd, old_user_page);
+
+      swap_page_out (eviction_page, dirty);
+
+      if (old_pt != pt)
+        lock_release (&old_pt->lock);
+    }
+  else
+    {
+      frame->pt = pt;
+      frame->page_user_addr = user_page;
+
+      release_frame_table_lock ();
+    }
+
+  swap_page_in (page, frame);
+
+  pagedir_set_page (pt->pd, user_page, frame->page_phys_addr, page->writable);
+  pagedir_set_dirty (pt->pd, user_page, false);
+  pagedir_set_accessed (pt->pd, user_page, false);
+
+  lock_release (&pt->lock);
+  return true;
+}
+
+void
+swap_page_in (struct page *p, struct frame *frame)
+{
+  p->present = true;
+  p->frame = frame;
+
+  switch (p->type)
+  {
+    case ZERO:
+      memset (p->frame->page_phys_addr, 0, PGSIZE);
+      break;
+
+    case FILE:
+      acquire_filesystem_lock ();
+      off_t n = file_read_at (p->file, p->frame->page_phys_addr, p->length, p->offset);
+      release_filesystem_lock ();
+      memset (p->frame->page_phys_addr + n, 0, PGSIZE - n);
+      break;
+
+    case SWAP:
+      swap_page_in (p->frame->page_phys_addr, p->swap);
+      break;
+  }
+}
+
+void
+swap_page_out (struct page *p, bool dirty)
+{
+  p->present = false;
+
+  switch (p->type)
+  {
+    case ZERO:
+      if (dirty)
+        {
+          p->type = SWAP;
+          p->swap = swap_page_out (p->frame->page_phys_addr);
+        }
+      break;
+
+    case SWAP:
+      p->type = SWAP;
+      p->swap = swap_page_out (p->frame->page_phys_addr);
+      break;
+
+    case FILE:
+      if (dirty && p->write_back)
+        {
+          acquire_filesystem_lock ();
+          file_write_at (p->file, p->frame->page_phys_addr, p->length, p->offset);
+          release_filesystem_lock ();
+        }
+      else if (dirty)
+        {
+          p->type = SWAP;
+          p->swap = swap_page_out (p->frame->page_phys_addr);
+        }
+      break;
+  }
+}
+
+void
+page_destroy (struct page *p, bool dirty)
+{
+  switch (p->type)
+  {
+    case ZERO:
+      break;
+
+    case SWAP:
+      if (!p->present)
+        swap_drop (p->swap);
+      break;
+
+    case FILE:
+      if (p->present && dirty && p->write_back)
+        {
+          acquire_filesystem_lock ();
+          file_write_at (p->file, p->frame->page_phys_addr, p->length, p->offset);
+          release_filesystem_lock ();
+        }
+      break;
+  }
 }
