@@ -23,7 +23,7 @@
 #include "vm/frame.h"
 #include "vm/page.h"
 #include "vm/mmap.h"
-#include "vm/shared_page.h"
+//#include "vm/shared_page.h"
 #endif
 
 static thread_func start_process NO_RETURN;
@@ -345,14 +345,14 @@ process_exit (void)
       cur->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
-      #ifdef VM
-        frame_reclaim(cur);
-      #endif
+      // #ifdef VM
+      //   frame_reclaim(cur);
+      // #endif
     } 
-    #ifdef VM
-      page_reclaim(&cur->spt);
-      cur->spt = NULL;
-    #endif
+    // #ifdef VM
+    //   page_reclaim(&cur->spt);
+    //   cur->spt = NULL;
+    // #endif
   /* Write error message to console and break connection with child_bond. */
   if (cur->child_bond != NULL) {
     printf("%s: exit(%d)\n", cur->name, cur->child_bond->exit_status);
@@ -508,7 +508,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   if (spt == NULL)
     goto done;
   init_pt (spt);
-  t->spt = spt;
+  //t->spt = spt;
 #endif
   if (t->pagedir == NULL) 
     goto done;
@@ -718,12 +718,17 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         }     
         
       } else {
-        
+
         /* Check if writable flag for the page should be updated */
-        if(!pagedir_is_writable(t->pagedir, upage) && !is_shared_page(upage)){
-          share_page(upage, file, ofs, page_read_bytes, writable);
-          return true;
+        if(writable && !pagedir_is_writable(t->pagedir, upage)){
+          pagedir_set_writable(t->pagedir, upage, writable); 
         }
+
+        /* Check if writable flag for the page should be updated */
+        // if(!pagedir_is_writable(t->pagedir, upage) && !is_shared_page(upage)){
+        //   share_page(upage, file, ofs, page_read_bytes, writable);
+        //   return true;
+        // }
       }
 
       /* Load data into the page. */
