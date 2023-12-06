@@ -777,3 +777,23 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+
+struct file* 
+process_get_file(int fd) 
+{
+    struct list_elem *e;
+    struct open_file *of = NULL;
+
+    // Iterate over the list of open files to find the one with the matching file descriptor
+    for (e = list_begin(&thread_current()->open_files); e != list_end(&thread_current()->open_files); e = list_next(e)) {
+        struct open_file *entry = list_entry(e, struct open_file, elem);
+        if (entry->fd == fd) {
+            of = entry;
+            break;
+        }
+    }
+
+    // Return the file associated with the file descriptor
+    return of != NULL ? of->file : NULL;
+}
+
