@@ -21,7 +21,7 @@ compare_mapid (const struct list_elem *a, const struct list_elem *b, void *aux U
 mapid_t mmap (int fd, void *addr)  {
 
   /* Check validity of inputs */
-  if (fd == STDIN_FILENO || fd == STDOUT_FILENO || addr == NULL) {
+  if (fd == STDIN_FILENO || fd == STDOUT_FILENO || addr == NULL || pg_ofs(addr) != 0) {
     return MAP_FAILED; 
   }
 
@@ -43,7 +43,7 @@ mapid_t mmap (int fd, void *addr)  {
   acquire_filesystem_lock();
   off_t file_size = file_length (file);
   release_filesystem_lock();
-  if (file_size == 0 || (int) addr == 0 || (int) addr % PGSIZE != 0)
+  if (file_size == 0)
   {
     return MAP_FAILED;
   }
@@ -56,7 +56,7 @@ mapid_t mmap (int fd, void *addr)  {
   struct thread *current = thread_current();
   struct page_table *page_table = &current->page_table;
   for (size_t i = 0; i < page_count; i++) {
-    if (!available_page(page_table, i * PGSIZE + addr)) {
+    if (!available_page(page_table, addr + PGSIZE * i)) {
       return MAP_FAILED;
     }
   }
@@ -74,6 +74,7 @@ mapid_t mmap (int fd, void *addr)  {
                    ? 1
                    : (list_entry (max, struct mapped_file, elem)->mapid + 1);
 
+  list_push_back(&current->mapped_files, &new_mapped_file->elem);
   new_mapped_file->mapid = mapid;
   new_mapped_file->file = file;
   new_mapped_file->addr = addr;
@@ -83,7 +84,7 @@ mapid_t mmap (int fd, void *addr)  {
   size_t bytes_left = file_size;
   off_t offset = 0;
   for (size_t i = 0; i < page_count; i++) {
-    size_t bytes_to_read = PGSIZE >= bytes_left ? PGSIZE : bytes_left;
+    size_t bytes_to_read = bytes_left < PGSIZE ? bytes_left : PGSIZE;
 
     create_file_page(page_table, addr, new_mapped_file->file, offset,
            bytes_to_read, true, true);

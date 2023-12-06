@@ -13,8 +13,19 @@
 #include "devices/swap.h"
 #include "userprog/process.h"
 
+static bool compare_pages (const struct hash_elem *elem_a, 
+                           const struct hash_elem *elem_b, void *aux);
+static unsigned hash_page (const struct hash_elem *elem, void *aux);
+static void remove_page (struct hash_elem *elem, void *aux);
+static struct page *search_pt (struct hash *spt, void *user_addr);
+static struct page *get_page (struct page_table *page_table, 
+                              void *key, bool create);
+static void swap_page_in (struct page *p, struct frame *frame);
+static void swap_page_out (struct page *p, bool dirty);
+static void page_destroy (struct page *p, bool dirty);
+
 /* Compare hash key of two pages. */
-bool
+static bool
 compare_pages (const struct hash_elem *elem_a, const struct hash_elem *elem_b,
             void *aux UNUSED)
 {
@@ -24,7 +35,7 @@ compare_pages (const struct hash_elem *elem_a, const struct hash_elem *elem_b,
 }
 
 /* Calculates hash from hash key. */
-unsigned
+static unsigned
 hash_page (const struct hash_elem *elem, void *aux UNUSED)
 {
   const struct page *p = hash_entry (elem, struct page, elem);
@@ -42,14 +53,14 @@ init_pt (struct page_table *page_table)
     return false;
   }
 
-  if (!hash_init (&page_table->spt, hash_page, compare_pages, NULL))
+  if (!hash_init (&page_table->spt, hash_page, compare_pages, page_table->pd))
   {
     return false;
   }
   return true;
 }
 
-void
+static void
 remove_page (struct hash_elem *elem, void *aux UNUSED) 
 {
   struct page *page = hash_entry(elem, struct page, elem);
@@ -68,6 +79,7 @@ remove_page (struct hash_elem *elem, void *aux UNUSED)
 void
 free_pt (struct page_table *page_table)
 {
+  /* Always acquire locks in this order to avaoid deadlock. */
   acquire_frame_table_lock ();
   lock_acquire (&page_table->lock);
 
@@ -89,7 +101,7 @@ free_pt (struct page_table *page_table)
   lock_destroy (&page_table->lock);
 }
 
-struct page *
+static struct page *
 search_pt (struct hash *spt, void *user_addr)
 {
   struct page p;
@@ -100,7 +112,7 @@ search_pt (struct hash *spt, void *user_addr)
   return e != NULL ? hash_entry (e, struct page, elem) : NULL;
 }
 
-struct page *
+static struct page *
 get_page (struct page_table *page_table, void *key, bool create)
 {
   bool ft_locked = curr_has_ft_lock ();
@@ -312,7 +324,7 @@ make_present (struct page_table *pt, void *user_page)
   return true;
 }
 
-void
+static void
 swap_page_in (struct page *p, struct frame *frame)
 {
   p->present = true;
@@ -337,7 +349,7 @@ swap_page_in (struct page *p, struct frame *frame)
   }
 }
 
-void
+static void
 swap_page_out (struct page *p, bool dirty)
 {
   p->present = false;
@@ -373,7 +385,7 @@ swap_page_out (struct page *p, bool dirty)
   }
 }
 
-void
+static void
 page_destroy (struct page *p, bool dirty)
 {
   switch (p->type)

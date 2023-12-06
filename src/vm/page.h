@@ -39,15 +39,9 @@ struct page_table
   struct lock lock;
 };
 
-bool compare_pages (const struct hash_elem *elem_a, const struct hash_elem *elem_b, void *aux);
-unsigned hash_page (const struct hash_elem *elem, void *aux);
-
 bool init_pt (struct page_table *page_table);
-void remove_page (struct hash_elem *elem, void *aux);
 void free_pt (struct page_table *page_table);
-struct page *search_pt (struct hash *page_table, void *user_addr);
 
-struct page *get_page (struct page_table *page_table, void *key, bool create);
 bool create_file_page (struct page_table *page_table, void *user_page, struct file *id, off_t offset,
                        uint32_t length, bool writable, bool write_back);
 bool create_zero_page (struct page_table *page_table, void *user_addr, bool writable);
@@ -57,9 +51,5 @@ void activate_pt (struct page_table *page_table);
 bool already_mapped (struct page_table *page_table, void *user_page);
 bool in_stack (void *user_page);
 bool make_present (struct page_table *pt, void *user_page);
-
-void swap_page_in (struct page *p, struct frame *frame);
-void swap_page_out (struct page *p, bool dirty);
-void page_destroy (struct page *p, bool dirty);
 
 #endif

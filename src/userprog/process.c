@@ -381,7 +381,7 @@ process_activate (void)
   struct thread *t = thread_current ();
 
   /* Activate thread's page tables. */
-  pagedir_activate (t->pagedir);
+  activate_pt (&t->page_table);
 
   /* Set thread's kernel stack for use in processing
      interrupts. */
@@ -708,13 +708,11 @@ process_get_file(int fd)
 
     /* Iterate over the list of open files to find the one with the matching file descriptor. */ 
     for (e = list_begin(&thread_current()->open_files); e != list_end(&thread_current()->open_files); e = list_next(e)) {
-        struct open_file *entry = list_entry(e, struct open_file, elem);
-        if (entry->fd == fd) {
-            of = entry;
-            break;
+        of = list_entry(e, struct open_file, elem);
+        if (of->fd == fd) {
+            return of->file;
         }
     }
-
-    /* Return the file associated with the file descriptor. */ 
-    return of != NULL ? of->file : NULL;
+    
+    return NULL;
 }
