@@ -197,7 +197,7 @@ thread_tick (void)
   if (t == idle_thread)
     idle_ticks++;
 #ifdef USERPROG
-  else if (t->pagedir != NULL)
+  else if (t->is_user)
     user_ticks++;
 #endif
   else {
@@ -390,7 +390,8 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
-  process_exit ();
+  if (thread_current ()->is_user)
+    process_exit ();
 #endif
 
   /* Remove thread from all threads list, set our status to dying,
@@ -708,12 +709,10 @@ init_thread (struct thread *t, const char *name, int priority)
   t->recent_cpu = int_to_fixed_point(0);
   
 #ifdef USERPROG
-  t->exec_file = NULL;
   list_init(&t->open_files);
   list_init(&t->child_bonds);
   list_init(&t->mapped_files);
-  t->pagedir = NULL;
-  t->child_bond = NULL;
+  t->is_user = false;
 #endif
 
   old_level = intr_disable ();

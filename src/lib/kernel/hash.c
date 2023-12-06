@@ -88,7 +88,8 @@ hash_destroy (struct hash *h, hash_action_func *destructor)
 {
   if (destructor != NULL)
     hash_clear (h, destructor);
-  free (h->buckets);
+  if (h->buckets != NULL)
+    free (h->buckets);
 }
 
 /* Inserts NEW into hash table H and returns a null pointer, if

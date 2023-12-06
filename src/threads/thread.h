@@ -92,7 +92,6 @@ struct thread
   /* Owned by thread.c. */
   tid_t tid;                          /* Thread identifier. */
   enum thread_status status;          /* Thread state. */
-  int status_of_exit;
   char name[16];                      /* Name (for debugging purposes). */
   uint8_t *stack;                     /* Saved stack pointer. */
   int priority;                       /* Priority. */
@@ -108,7 +107,6 @@ struct thread
 
 #ifdef USERPROG
    /* Owned by userprog/process.c. */
-   uint32_t *pagedir;                  /* Page directory. */
    struct list open_files;             /* List of files open. */
    struct child_bond *child_bond;      /* Pointer to personal bond. */
    struct list child_bonds;            /* List of childrens bonds. */
