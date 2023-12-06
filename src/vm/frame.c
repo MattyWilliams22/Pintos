@@ -8,10 +8,6 @@
 #include "threads/synch.h"
 #include "userprog/pagedir.h"
 
-bool compare_frames (const struct hash_elem *elem_a, 
-            const struct hash_elem *elem_b, void *aux UNUSED);
-unsigned hash_frame (const struct hash_elem *elem, void *aux UNUSED);
-
 struct list frame_table;
 
 struct lock frame_table_lock;

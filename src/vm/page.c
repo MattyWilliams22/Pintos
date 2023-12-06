@@ -17,7 +17,7 @@ static bool compare_pages (const struct hash_elem *elem_a,
                            const struct hash_elem *elem_b, void *aux);
 static unsigned hash_page (const struct hash_elem *elem, void *aux);
 static void remove_page (struct hash_elem *elem, void *aux);
-static struct page *search_pt (struct hash *spt, void *user_addr);
+static struct page *search_pt (struct page_table *pt, void *user_addr);
 static struct page *get_page (struct page_table *page_table, 
                               void *key, bool create);
 static void swap_page_in (struct page *p, struct frame *frame);
@@ -102,13 +102,9 @@ free_pt (struct page_table *page_table)
 }
 
 static struct page *
-search_pt (struct hash *spt, void *user_addr)
+search_pt (struct page_table *pt, void *user_addr)
 {
-  struct page p;
-  struct hash_elem *e;
-
-  p.key = user_addr;
-  e = hash_find (spt, &p.elem);
+  struct hash_elem *e = hash_find (&pt->spt, &(struct page){ .key = user_addr }.elem);
   return e != NULL ? hash_entry (e, struct page, elem) : NULL;
 }
 
@@ -117,7 +113,7 @@ get_page (struct page_table *page_table, void *key, bool create)
 {
   bool ft_locked = curr_has_ft_lock ();
 
-  struct page *page = search_pt (&page_table->spt, key);
+  struct page *page = search_pt (page_table, key);
 
   if (page == NULL)
   {
@@ -148,10 +144,10 @@ get_page (struct page_table *page_table, void *key, bool create)
   bool present_status = page->present;
   bool dirty = false;
   if (present_status)
-    {
-      pagedir_clear_page (page_table->pd, key);
-      dirty = pagedir_is_dirty (page_table->pd, key);
-    }
+  {
+    pagedir_clear_page (page_table->pd, key);
+    dirty = pagedir_is_dirty (page_table->pd, key);
+  }
   page_destroy (page, dirty);
   if (present_status)
     free_frame (page->frame);
@@ -244,7 +240,7 @@ bool
 already_mapped (struct page_table *page_table, void *user_page)
 {
   lock_acquire (&page_table->lock);
-  struct page *page = search_pt (&page_table->spt, user_page);
+  struct page *page = search_pt (page_table, user_page);
   lock_release (&page_table->lock);
   return page != NULL;
 }
@@ -261,7 +257,7 @@ make_present (struct page_table *pt, void *user_page)
   acquire_frame_table_lock ();
   lock_acquire (&pt->lock);
 
-  struct page *page = search_pt (&pt->spt, user_page);
+  struct page *page = search_pt (pt, user_page);
   if (page == NULL)
   {
     release_frame_table_lock ();
@@ -291,7 +287,7 @@ make_present (struct page_table *pt, void *user_page)
     if (old_pt != pt)
       lock_acquire (&old_pt->lock);
 
-    struct page *eviction_page = search_pt (&old_pt->spt, old_user_page);
+    struct page *eviction_page = search_pt (old_pt, old_user_page);
 
     frame->pt = pt;
     frame->page_user_addr = user_page;
