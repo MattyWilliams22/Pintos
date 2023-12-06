@@ -117,6 +117,7 @@ struct thread
 
 #ifdef VM
   struct hash *page_table;
+  struct hash *shared_pages;
   struct list mapped_files;
   int next_mapid;
   void *esp;

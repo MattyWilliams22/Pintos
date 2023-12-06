@@ -21,8 +21,9 @@
 #include "threads/synch.h"
 #ifdef VM
 #include "vm/frame.h"
-#include "vm/mmap.h"
 #include "vm/page.h"
+#include "vm/mmap.h"
+#include "vm/shared_page.h"
 #endif
 
 static thread_func start_process NO_RETURN;
@@ -324,10 +325,10 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-#ifdef VM
-  free_pt (cur->page_table);
-  cur->page_table = NULL;
-#endif
+// #ifdef VM
+//   free_pt (cur->spt);
+//   cur->spt = NULL;
+// #endif
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -344,9 +345,14 @@ process_exit (void)
       cur->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
-      // frame_reclaim(cur);
+      #ifdef VM
+        frame_reclaim(cur);
+      #endif
     } 
-    // page_reclaim(&cur->spt);
+    #ifdef VM
+      page_reclaim(&cur->spt);
+      cur->spt = NULL;
+    #endif
   /* Write error message to console and break connection with child_bond. */
   if (cur->child_bond != NULL) {
     printf("%s: exit(%d)\n", cur->name, cur->child_bond->exit_status);
@@ -373,16 +379,6 @@ process_exit (void)
        e != list_end (&cur->open_files); e = next)
   {
     struct open_file *entry = list_entry (e, struct open_file, elem);
-    file_close (entry->file);
-    next = list_next (e);
-    free (entry);
-  }
-
-  /* Close all memory mapped files. */
-  for (struct list_elem *e = list_begin (&cur->mapped_files);
-       e != list_end (&cur->mapped_files); e = next)
-  {
-    struct mapped_file *entry = list_entry (e, struct mapped_file, elem);
     file_close (entry->file);
     next = list_next (e);
     free (entry);
@@ -497,11 +493,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
   t->pagedir = pagedir_create ();
 
 #ifdef VM
-  struct hash *page_table = malloc (sizeof (struct hash));
-  if (page_table == NULL)
+  struct hash *spt = malloc (sizeof (struct hash));
+  if (spt == NULL)
     goto done;
-  init_pt (page_table);
-  t->page_table = page_table;
+  init_pt (spt);
+  t->spt = spt;
 #endif
   if (t->pagedir == NULL) 
     goto done;
@@ -713,8 +709,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       } else {
         
         /* Check if writable flag for the page should be updated */
-        if(writable && !pagedir_is_writable(t->pagedir, upage)){
-          pagedir_set_writable(t->pagedir, upage, writable); 
+        if(!pagedir_is_writable(t->pagedir, upage) && !is_shared_page(upage)){
+          share_page(upage, file, ofs, page_read_bytes, writable);
+          return true;
         }
       }
 
@@ -779,23 +776,4 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
-}
-
-struct file* 
-process_get_file(int fd) 
-{
-    struct list_elem *e;
-    struct open_file *of = NULL;
-
-    // Iterate over the list of open files to find the one with the matching file descriptor
-    for (e = list_begin(&thread_current()->open_files); e != list_end(&thread_current()->open_files); e = list_next(e)) {
-        struct open_file *entry = list_entry(e, struct open_file, elem);
-        if (entry->fd == fd) {
-            of = entry;
-            break;
-        }
-    }
-
-    // Return the file associated with the file descriptor
-    return of != NULL ? of->file : NULL;
 }
