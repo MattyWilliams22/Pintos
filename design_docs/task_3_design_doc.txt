@@ -81,6 +81,15 @@ struct lock frame_table_lock;
 >> Describe your code for finding the frame (if any) or other location that 
 >> contains the data of a given page.
 
+The allocate_frame function finds or creates a frame for a given user page by 
+attempting to allocate a physical page using palloc_get_page(flags). 
+If successful, it returns the physical address of the allocated page, 
+representing the frame containing the data for the specified user page. 
+If there is a shortage of memory, it evicts by calling get_frame_to_evict and 
+frees the evicted frame using free_frame. The function then associates the 
+user's virtual address with the allocated physical address and inserts this 
+information into the frame table.
+
 >> A3: (2 marks)
 >> How have you implemented sharing of read only pages?
 
