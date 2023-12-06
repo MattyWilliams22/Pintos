@@ -125,7 +125,11 @@ find the page/frame (taking O(1) time).
 >> B2: (2 marks)
 >> When a frame is required but none is free, some frame must be evicted.
 >> Describe your code for choosing a frame to evict.
-
+The get_frame_to_evict function iterates through frames in the frame table 
+using a hash iterator, checking the accessed bit in the page table entry 
+to identify frames that haven't been recently used. Frames meeting this 
+criteria are considered eviction candidates, and the 
+function returns the selected frame. 
 
 
 >> B3: (2 marks)
