@@ -201,9 +201,23 @@ struct mapped_file
 >> Explain how you determine whether a new file mapping overlaps with any 
 >> existing segment and how you handle such a case.
 
+First, the function validates the input parameters, verifying that the 
+file descriptor is not for standard input or output and that the address 
+provided is non-null and page-aligned. After that, a loop iterates through 
+the provided address range, using the available_page function to check for 
+page availability. If any of the pages in the range is already in use, the 
+function returns MAP_FAILED, indicating that an existing segment overlapped.
+
 ---- RATIONALE ----
 
 >> C3: (1 mark)
 >> Mappings created with "mmap" have similar semantics to those of data 
 >> demand-paged from executables. 
 >> How does your code-base take advantage of this?
+
+The mmap implementation's create_file_page function is in charge of 
+creating pages for the data in the file. The code dynamically loads 
+portions of the file into memory on demand, using the demand-paging 
+method commonly used for executable programmes. The memory is used 
+by bringing in just the bits of the file that are accessed, 
+similar to the demand-paging behaviour seen in executable files.
