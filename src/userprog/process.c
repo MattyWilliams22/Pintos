@@ -107,7 +107,6 @@ tid_t
 process_execute (char *cmd_line) 
 {
   char *cmd_line_copy = NULL;
-  tid_t tid;
   struct child_bond *child_bond = NULL;
   struct process_setup_params *setup_params = NULL;
 
@@ -144,10 +143,26 @@ process_execute (char *cmd_line)
   char *continue_from;
 
   /* Using strtok_r to get the command to run. */
-  char *program_name = strtok_r(cmd_line, " ", &continue_from);
+  char *program_name;
+  program_name = strtok_r(cmd_line, " ", &continue_from);
+  if (program_name == NULL) {
+    goto fail;
+  }
+
+  /* Check that the file exists. */
+  struct file *file = NULL;
+  acquire_filesystem_lock();
+  file = filesys_open (program_name);
+  if (file == NULL) 
+  {
+    printf ("load: %s: open failed\n", program_name);
+    goto fail; 
+  }
+  file_close (file);
+  release_filesystem_lock();
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (program_name, PRI_DEFAULT, start_process, setup_params);
+  tid_t tid = thread_create (program_name, PRI_DEFAULT, start_process, setup_params);
   if (tid == TID_ERROR)
     goto fail;
 
@@ -157,9 +172,9 @@ process_execute (char *cmd_line)
     goto fail;
   }
 
-
   palloc_free_page (cmd_line_copy);
   free(setup_params);
+
   return tid;
 fail:
   if (cmd_line_copy != NULL)
@@ -171,6 +186,7 @@ fail:
   }
   if (setup_params != NULL)
     free (setup_params);
+
   return TID_ERROR;
 }
 

@@ -164,9 +164,6 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
-void update_priority_bsd (struct thread *t, void *aux UNUSED);
-void update_recent_cpu (struct thread *t, void *aux UNUSED);
-void update_load_avg (void);
 int get_ready_threads (void);
 
 void update_priorities (struct thread *, struct lock *);

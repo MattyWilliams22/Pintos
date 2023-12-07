@@ -74,6 +74,9 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+static void update_priority_bsd (struct thread *t, void *aux);
+static void update_recent_cpu (struct thread *t, void *aux);
+static void update_load_avg (void);
 
 static fixed_point_t load_avg;
 
@@ -306,7 +309,8 @@ thread_create (const char *name, int priority,
 
   /* Checks if t has a higher priority than running thread.
      Yields if it does. */
-  yield_if_necessary(t);
+  if (t->effective_priority > thread_current ()->effective_priority)
+    thread_yield ();
 
   return tid;
 }
@@ -552,7 +556,7 @@ thread_get_load_avg (void)
 }
 
 /* Updates the load_avg. */ 
-void 
+static void 
 update_load_avg (void) 
 {
   ASSERT (thread_mlfqs);
@@ -575,7 +579,7 @@ thread_get_recent_cpu (void)
 }
 
 /* Updates the recent CPU value of thread t. */ 
-void 
+static void 
 update_recent_cpu (struct thread *t, void *aux UNUSED) 
 {
   ASSERT (thread_mlfqs);
@@ -590,10 +594,11 @@ update_recent_cpu (struct thread *t, void *aux UNUSED)
 
 /* Updates the priority of thread t, 
    and moves it to the correct list in the multilevel feedback queue. */ 
-void
+static void
 update_priority_bsd (struct thread *t, void *aux UNUSED) {
 
   ASSERT (thread_mlfqs);
+  ASSERT (intr_get_level () == INTR_OFF);
 
   if (t == idle_thread) return;
 
