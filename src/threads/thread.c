@@ -182,8 +182,8 @@ threads_ready (void)
   {
     cnt += list_size (&multilevel_queue[i]);
   }
-  return cnt;
   intr_set_level (old_level);
+  return cnt;
 }
 
 /* Called by the timer interrupt handler at each timer tick.
