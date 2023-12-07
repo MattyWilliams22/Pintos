@@ -8,18 +8,23 @@
 
 >> Fill in the names and email addresses of your group members.
 
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
+Matty Williams          mw2122@ic.ac.uk
+Kritik Pant             kp1222@ic.ac.uk
+Shivam Subudhi          ss4522@ic.ac.uk
+Atheepan Chandrakumaran ac4322@ic.ac.uk
 
 ---- PRELIMINARIES ----
 
 >> If you have any preliminary comments on your submission, or notes for the
 >> markers, please give them here.
 
+None
+
 >> Please cite any offline or online sources you consulted while preparing your 
 >> submission, other than the Pintos documentation, course text, lecture notes 
 >> and course staff.
+
+None
 
             PAGE TABLE/FRAME MANAGEMENT
             =====================
@@ -32,11 +37,58 @@ FirstName LastName <email@domain.example>
 >> supplemental page table and frame table. 
 >> Identify the purpose of each in roughly 25 words.
 
+
+enum page_type
+{
+  FILE,
+  FRAME,
+  ZERO
+};
+The type of a page.
+
+/* One page for the supplemental page table. */
+struct page
+{
+  struct hash_elem elem;
+  void *key; // user virtual address
+  uint8_t *kernel_addr; // kernel virtual address
+  bool writable;
+  off_t offset;
+  size_t read_bytes;
+  size_t zero_bytes;
+  struct file *file;
+  enum page_type type;
+};
+
+/* One frame to be stored in the frame table. */
+struct frame {
+  struct hash_elem elem;
+  void *page_phys_addr;
+  void *page_user_addr;
+  // struct thread* owner;
+};
+
+/* The frame table. */
+struct hash frame_table;
+
+/* Lock used to control access to the frame table. */
+struct lock frame_table_lock;
+
+
 ---- ALGORITHMS ----
 
 >> A2: (2 marks) 
 >> Describe your code for finding the frame (if any) or other location that 
 >> contains the data of a given page.
+
+The allocate_frame function finds or creates a frame for a given user page by 
+attempting to allocate a physical page using palloc_get_page(flags). 
+If successful, it returns the physical address of the allocated page, 
+representing the frame containing the data for the specified user page. 
+If there is a shortage of memory, it evicts by calling get_frame_to_evict and 
+frees the evicted frame using free_frame. The function then associates the 
+user's virtual address with the allocated physical address and inserts this 
+information into the frame table.
 
 >> A3: (2 marks)
 >> How have you implemented sharing of read only pages?
@@ -49,11 +101,21 @@ FirstName LastName <email@domain.example>
 >> You should consider both when there are and are not free frames 
 >> available in memory.
 
+We have used a lock called the frame_table_lock to avoid race conditions.
+Before accessing the frame table, we always acquire the lock and then release it
+once a thread is done reading/modifying the table.
+
 ---- RATIONALE ----
 
 >> A5: (2 marks)
 >> Why did you choose the data structure(s) that you did for representing the
 >> supplemental page table and frame table?
+
+We chose to use hashes to represent both the page and frame tables. 
+This improves access speeds as you do bot have to iterate through a long list to
+find a page/frame (taking O(n) time), instead a hash is calculated and used to 
+find the page/frame (taking O(1) time).
+
 
                PAGING TO AND FROM DISK
                =======================
@@ -63,17 +125,29 @@ FirstName LastName <email@domain.example>
 >> B2: (2 marks)
 >> When a frame is required but none is free, some frame must be evicted.
 >> Describe your code for choosing a frame to evict.
+The get_frame_to_evict function iterates through frames in the frame table 
+using a hash iterator, checking the accessed bit in the page table entry 
+to identify frames that haven't been recently used. Frames meeting this 
+criteria are considered eviction candidates, and the 
+function returns the selected frame. 
+
 
 >> B3: (2 marks)
 >> When a process P obtains a frame that was previously used by a process Q,
 >> how do you adjust the page directory of process Q (and any other data 
 >> structures) to reflect the frame Q no longer has?
 
+
+
 ---- SYNCHRONIZATION ----
 
 >> B4: (2 marks)
 >> Explain how your synchronization design prevents deadlock.  
 >> (You may want to refer to the necessary conditions for deadlock.)
+
+Deadlock occurs when two threads are each trying to acquire locks that the other
+thread already holds. In our code we always use the same order when acquiring 
+locks. This means that deadlock does not occur.
 
 >> B5: (2 marks)
 >> A page fault in process P can cause another process Q's frame to be evicted.
@@ -107,6 +181,19 @@ FirstName LastName <email@domain.example>
 >> global or static variable, `typedef', or enumeration that relates to your 
 >> file mapping table.  
 >> Identify the purpose of each in roughly 25 words.
+
+/* Type used for uniquely identifying mapped_files. */
+typedef int mapid_t;
+
+/* A mapped file. */
+struct mapped_file
+{
+    mapid_t mapid;          /* Unique id of mapped file. */
+    struct file *file;      /* File that is being mapped. */
+    void *addr;             /* Address of file in user space. */
+    size_t page_count;      /* Number of pages in the file. */
+    struct list_elem elem;  /* Used for adding to thread->mapped_files list. */
+};
 
 ---- ALGORITHMS ----
 

@@ -16,7 +16,7 @@ enum page_type
   ZERO
 };
 
-/* Supplemental page table. (per process) */
+/* One page for the supplemental page table. */
 struct page
 {
   struct hash_elem elem;

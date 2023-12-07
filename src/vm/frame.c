@@ -8,8 +8,10 @@
 #include "threads/synch.h"
 #include "userprog/pagedir.h"
 
+/* The frame table. */
 struct list frame_table;
 
+/* Lock used to control access to the frame table. */
 struct lock frame_table_lock;
 
 void 
@@ -40,8 +42,8 @@ allocate_frame (bool pinned)
     return find_frame_to_evict();
   }
 
-  struct frame *frame = malloc (sizeof (struct frame));
-  if (frame == NULL)
+  struct frame *to_add = malloc (sizeof (struct frame));
+  if (to_add == NULL)
   {
     return NULL;
   }

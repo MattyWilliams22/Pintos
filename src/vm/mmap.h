@@ -5,16 +5,18 @@
 #include <stdbool.h>
 #include "filesys/file.h"
 #include "userprog/process.h"
-  
+
+/* Type used for uniquely identifying mapped_files. */
 typedef int mapid_t;
 
+/* A mapped file. */
 struct mapped_file
 {
-    mapid_t mapid;
-    struct file *file;
-    void *addr;
-    size_t page_count;
-    struct list_elem elem;
+    mapid_t mapid;          /* Unique id of mapped file. */
+    struct file *file;      /* File that is being mapped. */
+    void *addr;             /* Address of file in user space. */
+    size_t page_count;      /* Number of pages in the file. */
+    struct list_elem elem;  /* Used for adding to thread->mapped_files list. */
 };
 
 mapid_t mmap (int fd, void *addr);
