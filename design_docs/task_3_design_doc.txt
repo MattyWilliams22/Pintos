@@ -93,6 +93,28 @@ information into the frame table.
 >> A3: (2 marks)
 >> How have you implemented sharing of read only pages?
 
+In our current implementation, we did not have the opportunity to implement 
+sharing of read-only pages. However, if we were to implement this feature, 
+one possible approach would be to introduce a share table.
+
+The share table could be a data structure that keeps track of shared 
+read-only pages among different processes. Each entry in the share table might 
+include information about the page, such as its location in memory and the 
+number of processes currently sharing it.
+
+When a process attempts to map a read-only page, instead of directly mapping 
+it to the corresponding frame, the system would check the share table. If the 
+page is already shared, the system would update the reference count in the 
+share table and map the process to the existing shared frame. If the page is 
+not yet shared, a new entry would be created in the share table, and the page 
+would be mapped to a new frame as usual.
+
+To ensure synchronization and consistency, the share table could be protected 
+by appropriate locks to handle concurrent access by multiple processes. 
+Additionally, reference counting could be employed to track the number of 
+processes sharing a particular read-only page. When a process no longer needs 
+the shared page, the reference count would be decremented, and if it reaches 
+zero, the page could be unshared.
 ---- SYNCHRONIZATION ----
 
 >> A4: (2 marks) 
