@@ -214,3 +214,10 @@ function returns MAP_FAILED, indicating that an existing segment overlapped.
 >> Mappings created with "mmap" have similar semantics to those of data 
 >> demand-paged from executables. 
 >> How does your code-base take advantage of this?
+
+The mmap implementation's create_file_page function is in charge of 
+creating pages for the data in the file. The code dynamically loads 
+portions of the file into memory on demand, using the demand-paging 
+method commonly used for executable programmes. The memory is used 
+by bringing in just the bits of the file that are accessed, 
+similar to the demand-paging behaviour seen in executable files.
