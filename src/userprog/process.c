@@ -20,7 +20,6 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 #include "vm/frame.h"
-#include "vm/page.h"
 #include "vm/mmap.h"
 #include "vm/page.h"
 
