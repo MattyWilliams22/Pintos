@@ -20,6 +20,7 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 #include "vm/frame.h"
+#include "vm/page.h"
 #include "vm/mmap.h"
 #include "vm/page.h"
 
@@ -379,6 +380,7 @@ process_exit (void)
     next = list_next (e);
     free (entry);
   }
+
 
   if (cur->exec_file != NULL)
     file_close (cur->exec_file);
