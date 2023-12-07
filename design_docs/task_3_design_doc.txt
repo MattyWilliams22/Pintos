@@ -147,7 +147,7 @@ find the page/frame (taking O(1) time).
 >> B2: (2 marks)
 >> When a frame is required but none is free, some frame must be evicted.
 >> Describe your code for choosing a frame to evict.
-The get_frame_to_evict function iterates through frames in the frame table 
+The find_frame_to_evict function iterates through frames in the frame table 
 using a hash iterator, checking the accessed bit in the page table entry 
 to identify frames that haven't been recently used. Frames meeting this 
 criteria are considered eviction candidates, and the 
@@ -184,6 +184,14 @@ locks. This means that deadlock does not occur.
 >> B7: (2 marks)
 >> Explain how you handle access to user pages that are not present when a
 >> system call is made.
+
+The syscall_handler function reads the system call number from the user stack,
+saves the user stack pointer for potential stack growth, and dispatches the
+appropriate system call handler. The get_user function is crucial for safely
+reading data from user space, and it checks the validity of the user address
+using is_user_vaddr. In case of a page fault during the read operation, 
+get_user returns -1. The syscall_handler function, upon detecting a page fault,
+invokes thread_exit() to terminate the current thread. 
 
 ---- RATIONALE ----
 
