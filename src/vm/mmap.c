@@ -94,7 +94,7 @@ mapid_t mmap (int fd, void *addr)  {
     bytes_left -= bytes_to_read;
   }
 
-  return new_mapped_file->mapid;
+  return mapid;
 }
 
 void munmap(mapid_t id) {

@@ -186,7 +186,7 @@ create_zero_page (struct page_table *page_table, void *user_addr, bool writable)
 {
   lock_acquire (&page_table->lock);
 
-  struct page *page = malloc (sizeof (struct page));
+  struct page *page = get_page(page_table, user_addr, true);
   if (page == NULL)
   {
     lock_release (&page_table->lock);
