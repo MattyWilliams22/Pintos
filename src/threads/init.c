@@ -28,7 +28,6 @@
 #include "userprog/gdt.h"
 #include "userprog/syscall.h"
 #include "userprog/tss.h"
-#include "devices/swap.h"
 #include "vm/frame.h"
 #else
 #include "tests/threads/tests.h"
@@ -36,6 +35,7 @@
 #ifdef FILESYS
 #include "devices/block.h"
 #include "devices/ide.h"
+#include "devices/swap.h"
 #include "filesys/filesys.h"
 #include "filesys/fsutil.h"
 #endif
@@ -88,7 +88,7 @@ main (void)
   /* Initialize ourselves as a thread so we can use locks,
      then enable console locking. */
   thread_init ();
-  console_init ();  
+  console_init ();
 
   /* Greet user. */
   printf ("Pintos booting with %'"PRIu32" kB RAM...\n",
@@ -96,7 +96,7 @@ main (void)
 
   /* Initialize memory system. */
   palloc_init (user_page_limit);
-  malloc_init ();
+    malloc_init ();
   paging_init ();
   init_frame_table ();
   random_init(42);
@@ -284,7 +284,7 @@ static void
 run_task (char **argv)
 {
   char *task = argv[1];
-  
+
   printf ("Executing '%s':\n", task);
 #ifdef USERPROG
   process_wait (process_execute (task));
@@ -382,7 +382,7 @@ usage (void)
           "  -ul=COUNT          Limit user memory to COUNT pages.\n"
           "  -swap=BDEV         Use BDEV for swap instead of default.\n"
 #endif
-          );
+  );
   shutdown_power_off ();
 }
 

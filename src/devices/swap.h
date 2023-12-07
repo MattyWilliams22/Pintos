@@ -1,5 +1,5 @@
 #ifndef DEVICES_SWAP_H
-#define DEVICES_SWAP_H 1
+#define DEVICES_SWAP_H
 
 #include <stddef.h>
 
