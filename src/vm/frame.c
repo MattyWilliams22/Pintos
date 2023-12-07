@@ -54,7 +54,7 @@ allocate_frame (bool pinned)
   to_add->pinned = pinned;
   to_add->pt = NULL;
 
-  return frame;
+  return to_add;
 }
 
 void
