@@ -48,11 +48,11 @@ allocate_frame (bool pinned)
     return NULL;
   }
   
-  list_push_back(&frame_table, &frame->elem);
-  frame->page_user_addr = NULL;
-  frame->page_phys_addr = page_phys_addr;
-  frame->pinned = pinned;
-  frame->pt = NULL;
+  list_push_back(&frame_table, &to_add->elem);
+  to_add->page_user_addr = NULL;
+  to_add->page_phys_addr = page_phys_addr;
+  to_add->pinned = pinned;
+  to_add->pt = NULL;
 
   return frame;
 }
