@@ -178,7 +178,7 @@ fail:
 static bool
 stack_push (void **esp, const void *src, size_t size)
 {
-  if (*esp < PHYS_BASE - PGSIZE + size)
+  if (*esp < PHYS_BASE - STACK_LIMIT + size)
     return false;
   *esp -= size;
   memcpy (*esp, src, size);
@@ -571,8 +571,6 @@ done:
 }
 
 /* load() helpers. */
-
-static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
