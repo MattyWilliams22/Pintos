@@ -340,7 +340,9 @@ process_exit (void)
       process_lose_connection(child);
     }
 
-  acquire_filesystem_lock ();
+  if (!lock_held_by_current_thread(&filesystem_lock)) {
+    acquire_filesystem_lock ();
+  }
 
   /* If open files, close and free memory. */ 
   for (struct list_elem *e = list_begin (&cur->open_files);

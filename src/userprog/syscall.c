@@ -38,8 +38,6 @@ static void sys_tell (struct intr_frame *f);
 static void sys_close (struct intr_frame *f);
 static void sys_mmap (struct intr_frame *f);
 static void sys_munmap (struct intr_frame *f);
-mapid_t mmap (int fd, void *addr);
-void munmap (mapid_t mapping);
 
 #define NUM_SUB_HANDLERS 15
 static const sub_handler sub_handlers[NUM_SUB_HANDLERS]
