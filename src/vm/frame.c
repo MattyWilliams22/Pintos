@@ -65,20 +65,6 @@ free_frame (struct frame *frame)
   free (frame);
 }
 
-void
-pin_frame (struct frame *frame)
-{
-  if (!frame->pinned)
-    frame->pinned = true;
-}
-
-void
-unpin_frame (struct frame *frame)
-{
-  if (frame->pinned)
-    frame->pinned = false;
-}
-
 struct frame *
 find_frame_to_evict (void)
 {

@@ -21,8 +21,6 @@ void acquire_frame_table_lock (void);
 void release_frame_table_lock (void);
 
 struct frame *find_frame_to_evict (void);
-void pin_frame (struct frame *frame);
-void unpin_frame (struct frame *frame);
 
 bool curr_has_ft_lock (void);
 
