@@ -19,24 +19,24 @@ enum page_type
 /* One page for the supplemental page table. */
 struct page
 {
-  struct hash_elem elem;
-  void *uaddr;
-  bool writable;
-  off_t offset;
-  struct file *file;
-  enum page_type type;
-  bool present;
-  bool write_back;
-  struct frame *frame;
-  off_t length;
-  size_t swap; // swap slot number
+  struct hash_elem elem;      /* Element used to add page to page table. */
+  void *uaddr;                /* User address of the page. */
+  bool writable;              /* Flags if page can be written to. */
+  off_t offset;               /* Offset of segment. */
+  struct file *file;          /* File struct of file being paged. */
+  enum page_type type;        /* Type of file being paged. */
+  bool present;               /* Flags if page can be accessed. */
+  bool write_back;            /* Flags if page can write back. */
+  struct frame *frame;        /* Frame struct. */
+  off_t length;               /* Length of segment. */
+  size_t slot;                /* Swap slot. */
 };
 
 struct page_table
 {
-  struct hash spt;
-  uint32_t *pd;
-  struct lock lock;
+  struct hash spt;            /* Hash table used to store pages. */
+  uint32_t *pd;               /* Page directory. */
+  struct lock lock;           /* Lock used to control access to page table. */
 };
 
 bool init_pt (struct page_table *page_table);

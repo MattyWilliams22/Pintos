@@ -364,7 +364,7 @@ swap_page_in (struct page *p, struct frame *frame)
       break;
 
     case SWAP:
-      swap_in (p->frame->page_phys_addr, p->swap);
+      swap_in (p->frame->page_phys_addr, p->slot);
       break;
   }
 }
@@ -381,13 +381,13 @@ swap_page_out (struct page *p, bool dirty)
       if (dirty)
       {
         p->type = SWAP;
-        p->swap = swap_out (p->frame->page_phys_addr);
+        p->slot = swap_out (p->frame->page_phys_addr);
       }
       break;
 
     case SWAP:
       p->type = SWAP;
-      p->swap = swap_out (p->frame->page_phys_addr);
+      p->slot = swap_out (p->frame->page_phys_addr);
       break;
 
     case FILE:
@@ -400,7 +400,7 @@ swap_page_out (struct page *p, bool dirty)
       else if (dirty)
       {
         p->type = SWAP;
-        p->swap = swap_out (p->frame->page_phys_addr);
+        p->slot = swap_out (p->frame->page_phys_addr);
       }
       break;
   }
@@ -417,7 +417,7 @@ destroy_page (struct page *p, bool dirty)
 
     case SWAP:
       if (!p->present)
-        swap_drop (p->swap);
+        swap_drop (p->slot);
       break;
 
     case FILE:
