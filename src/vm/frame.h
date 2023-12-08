@@ -3,8 +3,6 @@
 
 #include "threads/palloc.h"
 
-struct page_table;
-
 struct frame {
   struct list_elem elem;
   void *page_phys_addr;

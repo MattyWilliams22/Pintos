@@ -46,34 +46,80 @@ enum page_type
 };
 The type of a page.
 
-/* One page for the supplemental page table. */
 struct page
 {
   struct hash_elem elem;
-  void *key; // user virtual address
-  uint8_t *kernel_addr; // kernel virtual address
+  void *key;
   bool writable;
   off_t offset;
-  size_t read_bytes;
-  size_t zero_bytes;
   struct file *file;
   enum page_type type;
+  bool present;
+  bool write_back;
+  struct frame *frame;
+  off_t length;
+  size_t swap; // swap slot number
 };
+The structure of a single page in the supplemental page table
+
+struct page_table
+{
+  struct hash spt;
+  uint32_t *pd;
+  struct lock lock;
+};
+Structure of the spt
 
 /* One frame to be stored in the frame table. */
 struct frame {
-  struct hash_elem elem;
+  struct list_elem elem;
   void *page_phys_addr;
   void *page_user_addr;
-  // struct thread* owner;
+  bool pinned;
+  struct page_table *pt;
 };
 
 /* The frame table. */
-struct hash frame_table;
+struct list frame_table;
 
 /* Lock used to control access to the frame table. */
 struct lock frame_table_lock;
 
+struct thread
+{
+  /* Owned by thread.c. */
+  tid_t tid;                          /* Thread identifier. */
+  enum thread_status status;          /* Thread state. */
+  char name[16];                      /* Name (for debugging purposes). */
+  uint8_t *stack;                     /* Saved stack pointer. */
+  int priority;                       /* Priority. */
+  int effective_priority;             /* Effective priority. */
+  int nice;                           /* Niceness. */
+  fixed_point_t recent_cpu;           /* Recent CPU value for BSD Scheduler. */
+  struct list_elem allelem;           /* List element for all threads list. */
+  struct list owned_locks;
+  struct lock *required_lock;
+  
+  /* Shared between thread.c and synch.c. */
+  struct list_elem elem;              /* List element. */
+
+#ifdef USERPROG
+   /* Owned by userprog/process.c. */
+   struct list open_files;             /* List of files open. */
+   struct child_bond *child_bond;      /* Pointer to personal bond. */
+   struct list child_bonds;            /* List of childrens bonds. */
+   struct file *exec_file;             /* Current executable file */
+   struct page_table page_table;
+   struct list mapped_files;
+   void *esp;
+   bool is_user;
+#endif
+
+  /* Owned by thread.c. */
+  unsigned magic;                     /* Detects stack overflow. */
+};
+
+We have added a flag is_user checking if its a user process. We also have a page_table and a saved esp
 
 ---- ALGORITHMS ----
 
@@ -81,14 +127,9 @@ struct lock frame_table_lock;
 >> Describe your code for finding the frame (if any) or other location that 
 >> contains the data of a given page.
 
-The allocate_frame function finds or creates a frame for a given user page by 
-attempting to allocate a physical page using palloc_get_page(flags). 
-If successful, it returns the physical address of the allocated page, 
-representing the frame containing the data for the specified user page. 
-If there is a shortage of memory, it evicts by calling get_frame_to_evict and 
-frees the evicted frame using free_frame. The function then associates the 
-user's virtual address with the allocated physical address and inserts this 
-information into the frame table.
+Each page stores a pointer to a frame. search_pt can be used to search the page table 
+and find the required page. This takes O(n) as we have used a hash table for our page_table. 
+We can then return the frame field stored in the page.
 
 >> A3: (2 marks)
 >> How have you implemented sharing of read only pages?
@@ -115,6 +156,7 @@ Additionally, reference counting could be employed to track the number of
 processes sharing a particular read-only page. When a process no longer needs 
 the shared page, the reference count would be decremented, and if it reaches 
 zero, the page could be unshared.
+
 ---- SYNCHRONIZATION ----
 
 >> A4: (2 marks) 
@@ -125,7 +167,9 @@ zero, the page could be unshared.
 
 We have used a lock called the frame_table_lock to avoid race conditions.
 Before accessing the frame table, we always acquire the lock and then release it
-once a thread is done reading/modifying the table.
+once a thread is done reading/modifying the table. A process must call make_present 
+which acquires the lock before allocating any frames. It only releases the lock once this 
+finishes so no race conditions exist. 
 
 ---- RATIONALE ----
 
@@ -133,10 +177,9 @@ once a thread is done reading/modifying the table.
 >> Why did you choose the data structure(s) that you did for representing the
 >> supplemental page table and frame table?
 
-We chose to use hashes to represent both the page and frame tables. 
-This improves access speeds as you do bot have to iterate through a long list to
-find a page/frame (taking O(n) time), instead a hash is calculated and used to 
-find the page/frame (taking O(1) time).
+We used a list for the frame_table and a hash for the page_table. This allowed us the ease of 
+using a list but still gain the speed advantage of the hash. Every page fault requires a search of 
+the page table. Therefore using a hash is much better as it allows O(1) access. 
 
 
                PAGING TO AND FROM DISK
@@ -147,11 +190,13 @@ find the page/frame (taking O(1) time).
 >> B2: (2 marks)
 >> When a frame is required but none is free, some frame must be evicted.
 >> Describe your code for choosing a frame to evict.
-The find_frame_to_evict function iterates through frames in the frame table 
-using a hash iterator, checking the accessed bit in the page table entry 
-to identify frames that haven't been recently used. Frames meeting this 
-criteria are considered eviction candidates, and the 
-function returns the selected frame. 
+
+We implemented the second chance algorithm with pinning. The find_frame_to_evict function 
+iterates through frames in the frame table using a hash iterator, checking the accessed 
+bit in the page table entry to identify frames that haven't been recently used. We skip 
+pinned frames and if we reach the end of the list, we go back to the beginning. Frames meeting this 
+criteria are considered eviction candidates, and the function returns the selected frame. Otherwise, 
+we set the accessed bit to false and give the frame a second chance.
 
 
 >> B3: (2 marks)
@@ -159,7 +204,10 @@ function returns the selected frame.
 >> how do you adjust the page directory of process Q (and any other data 
 >> structures) to reflect the frame Q no longer has?
 
-
+If a process P obtains a frame previously owned by process Q, the ownership of the frame is 
+updated. Then, the mapping of the page directory of the frame would be marked as not present 
+by pagedir_clear_page. The page is then swapped out by using swap_page_out which sets the page to not 
+present.
 
 ---- SYNCHRONIZATION ----
 
@@ -169,29 +217,36 @@ function returns the selected frame.
 
 Deadlock occurs when two threads are each trying to acquire locks that the other
 thread already holds. In our code we always use the same order when acquiring 
-locks. This means that deadlock does not occur.
+locks. We always acquire the frame table before any page table. This means that 
+deadlock does not occur.
 
 >> B5: (2 marks)
 >> A page fault in process P can cause another process Q's frame to be evicted.
 >> How do you ensure that Q cannot access or modify the page during the 
 >> eviction process?
 
+A page fault in P would call make_present. This locks the frame table and P's page table. 
+If Q's page is evicted, we can get Q's page table as it is stored in the frame struct. 
+We update Q's page directory and then swap out the page. During this, the page fault handler 
+waits for Q's page table lock so Q's page can't be accessed during the swap.
+
 >> B6: (2 marks)
 >> A page fault in process P can cause another process Q's frame to be evicted.
 >> How do you avoid a race between P evicting Q's frame and Q faulting the page
 >> back in?
 
+During a swap, the page fault handler waits for Q's page table lock so Q's page 
+can't be accessed during the swap. Only after a swap is done can the fault handler continue.
+
 >> B7: (2 marks)
 >> Explain how you handle access to user pages that are not present when a
 >> system call is made.
 
-The syscall_handler function reads the system call number from the user stack,
-saves the user stack pointer for potential stack growth, and dispatches the
-appropriate system call handler. The get_user function is crucial for safely
-reading data from user space, and it checks the validity of the user address
-using is_user_vaddr. In case of a page fault during the read operation, 
-get_user returns -1. The syscall_handler function, upon detecting a page fault,
-invokes thread_exit() to terminate the current thread. 
+If a system call needs to acquire the frame table lock  or the file system lock, we ensure 
+that no fault happens in the critical section as follows:
+For integer, pointers or other small amount of data, we copy the code directly to the 
+kernel stack so we don't need to access user space. For larger amounts of data, we pin each page 
+so they can't be evicted inside a critical section. After that critical section, we unpin again.
 
 ---- RATIONALE ----
 
@@ -200,6 +255,11 @@ invokes thread_exit() to terminate the current thread.
 >> synchronisation methods. 
 >> Explain where your design falls along this continuum and why you chose to 
 >> design it this way.
+
+We have a lock for the global frame table and 1 for each page table. This allows some more 
+parallelism than having 1 lock for all page tables. Page faults in different processes will not 
+block each other. However, our locking is still not too fine grained so while we needed many checks and 
+conditions we were able to have a slightly simpler strategy.
 
              MEMORY MAPPED FILES
              ===================

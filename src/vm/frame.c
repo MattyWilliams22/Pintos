@@ -71,7 +71,7 @@ find_frame_to_evict (void)
   size_t size = list_size (&frame_table);
   ASSERT (size > 0);
 
-  /* LRU */
+  // Second chance algorithm
   struct list_elem *e = list_begin (&frame_table);
 
   while (true)
