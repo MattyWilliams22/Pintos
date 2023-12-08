@@ -53,6 +53,7 @@ mapid_t mmap (int fd, void *addr)  {
     page_count++;
   }
   
+  /* Check that the pages required to store the file are all available. */
   struct thread *current = thread_current();
   struct page_table *page_table = &current->page_table;
   for (size_t i = 0; i < page_count; i++) {
@@ -73,7 +74,7 @@ mapid_t mmap (int fd, void *addr)  {
   mapid_t mapid = (max == list_end (&current->mapped_files))
                    ? 1
                    : (list_entry (max, struct mapped_file, elem)->mapid + 1);
-
+                   
   list_push_back(&current->mapped_files, &new_mapped_file->elem);
   new_mapped_file->mapid = mapid;
   new_mapped_file->file = file;
@@ -88,7 +89,7 @@ mapid_t mmap (int fd, void *addr)  {
 
     create_file_page(page_table, addr, new_mapped_file->file, offset,
            bytes_to_read, true, true);
-    
+
     addr += PGSIZE;
     offset += PGSIZE;
     bytes_left -= bytes_to_read;

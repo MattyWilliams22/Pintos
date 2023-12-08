@@ -20,7 +20,7 @@ enum page_type
 struct page
 {
   struct hash_elem elem;
-  void *key;
+  void *uaddr;
   bool writable;
   off_t offset;
   struct file *file;
@@ -42,14 +42,14 @@ struct page_table
 bool init_pt (struct page_table *page_table);
 void free_pt (struct page_table *page_table);
 
-bool create_file_page (struct page_table *page_table, void *user_page, struct file *id, off_t offset,
+bool create_file_page (struct page_table *page_table, void *uaddr, struct file *id, off_t offset,
                        uint32_t length, bool writable, bool write_back);
-bool create_zero_page (struct page_table *page_table, void *user_addr, bool writable);
-bool delete_page (struct page_table *page_table, void *user_addr);
-bool available_page (struct page_table *page_table, void *user_page);
+bool create_zero_page (struct page_table *page_table, void *uaddr, bool writable);
+bool delete_page (struct page_table *page_table, void *uaddr);
+bool available_page (struct page_table *page_table, void *uaddr);
 void activate_pt (struct page_table *page_table);
-bool already_mapped (struct page_table *page_table, void *user_page);
-bool in_stack (void *user_page);
-bool make_present (struct page_table *pt, void *user_page);
+bool already_mapped (struct page_table *page_table, void *uaddr);
+bool in_stack (void *uaddr);
+bool load_page (struct page_table *pt, void *uaddr);
 
 #endif

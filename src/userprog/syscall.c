@@ -15,6 +15,37 @@
 #include "vm/frame.h"
 #include "vm/mmap.h"
 
+typedef void (*sys_call) (struct intr_frame *);
+
+static void sys_halt (struct intr_frame *f);
+static void sys_exit (struct intr_frame *f);
+static void sys_exec (struct intr_frame *f);
+static void sys_wait (struct intr_frame *f);
+static void sys_create (struct intr_frame *f);
+static void sys_remove (struct intr_frame *f);
+static void sys_open (struct intr_frame *f);
+static void sys_filesize (struct intr_frame *f);
+static void sys_read (struct intr_frame *f);
+static void sys_write (struct intr_frame *f);
+static void sys_seek (struct intr_frame *f);
+static void sys_tell (struct intr_frame *f);
+static void sys_close (struct intr_frame *f);
+static void sys_mmap (struct intr_frame *f);
+static void sys_munmap (struct intr_frame *f);
+
+#define NUM_SYS_CALLS 15
+static const sys_call sys_calls[NUM_SYS_CALLS]
+    = { &sys_halt,   &sys_exit, &sys_exec,     &sys_wait, &sys_create,
+        &sys_remove, &sys_open, &sys_filesize, &sys_read, &sys_write,
+        &sys_seek,   &sys_tell, &sys_close,    &sys_mmap, &sys_munmap };
+
+
+static void syscall_handler (struct intr_frame *f);
+static int get_user (const uint8_t *uaddr);
+static bool put_user (uint8_t *udst, uint8_t byte) UNUSED;
+static bool read_write_user (void *src, void *dst, size_t buf_size);
+static int safe_user_copy (void *src, char *dst, size_t buf_size);
+
 void
 syscall_init (void)
 {
@@ -27,14 +58,14 @@ syscall_handler (struct intr_frame *f)
   int syscall_num;
   if (!read_write_user (f->esp, &syscall_num, sizeof (syscall_num)))
     thread_exit ();
-  if (syscall_num < 0 || syscall_num >= NUM_SUB_HANDLERS)
+  if (syscall_num < 0 || syscall_num >= NUM_SYS_CALLS)
     thread_exit ();
 
   /* Save user stack pointer so that we can deal with stack growth happening
      from within system calls. */
   thread_current ()->esp = f->esp;
 
-  (*sub_handlers[syscall_num]) (f);
+  (*sys_calls[syscall_num]) (f);
 }
 
 static void
@@ -57,31 +88,31 @@ sys_exit (struct intr_frame *f)
 static void
 sys_exec (struct intr_frame *f)
 {
-  void *cmdline_uaddr;
-  if (!read_write_user (f->esp + 4, &cmdline_uaddr, sizeof (cmdline_uaddr)))
+  void *cmd_line;
+  if (!read_write_user (f->esp + 4, &cmd_line, sizeof (cmd_line)))
     thread_exit ();
 
-  char *cmdline_copy = palloc_get_page (0);
-  if (cmdline_copy == NULL)
+  char *cmd_line_copy = palloc_get_page (0);
+  if (cmd_line_copy == NULL)
     thread_exit ();
-  if (safe_user_copy (cmdline_uaddr, cmdline_copy, PGSIZE) == -1)
+  if (safe_user_copy (cmd_line, cmd_line_copy, PGSIZE) == -1)
     {
-      palloc_free_page (cmdline_copy);
+      palloc_free_page (cmd_line_copy);
       thread_exit ();
     }
 
-  f->eax = process_execute (cmdline_copy);
-  palloc_free_page (cmdline_copy);
+  f->eax = process_execute (cmd_line_copy);
+  palloc_free_page (cmd_line_copy);
 }
 
 static void
 sys_wait (struct intr_frame *f)
 {
-  tid_t tid;
-  if (!read_write_user (f->esp + 4, &tid, sizeof (tid)))
+  pid_t pid;
+  if (!read_write_user (f->esp + 4, &pid, sizeof (pid)))
     thread_exit ();
 
-  f->eax = process_wait (tid);
+  f->eax = process_wait (pid);
 }
 
 static void

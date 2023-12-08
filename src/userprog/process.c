@@ -63,8 +63,9 @@ release_filesystem_lock (void)
   lock_release (&filesystem_lock);
 }
 
+/* Initialises the filesystem lock. */
 void
-filesystem_lock_init (void)
+init_filesystem_lock (void)
 {
   lock_init (&filesystem_lock);
 }
@@ -313,19 +314,26 @@ int
 process_wait (tid_t child_tid)
 {
   struct thread *current = thread_current();
+  /* Iterate through the parent's list of child bonds. */
   for (struct list_elem *e = list_begin(&current->child_bonds); e != list_end (&current->child_bonds); e = list_next(e))
   {
     struct child_bond *bond = list_entry(e, struct child_bond, elem);
-    if (bond->child_tid == child_tid) 
+    if (bond->child_tid == child_tid)
     {
+      /* Down semaphore with the child bond with the correct tid. 
+         Will continue execution when child terminates and ups semaphore. */
       sema_down(&bond->sema);
+      /* The exit status will be set by the child before upping the semaphore. */
       int exit_status = bond->exit_status;
+      /* Remove the bond from the parent's list of bonds 
+         and break the connection witht the bond. */
       list_remove(e);
       lock_acquire(&bond->lock);
       process_lose_connection(bond);
       return exit_status;
     }
   }
+  /* If no bond was found with the corresponding tid, return -1 without waiting. */
   return -1;
 }
 
@@ -356,6 +364,7 @@ process_exit (void)
       process_lose_connection(child);
     }
 
+  /* Check if filesystem lock is held, if not, acquire the lock. */
   if (!lock_held_by_current_thread(&filesystem_lock)) {
     acquire_filesystem_lock ();
   }
@@ -694,6 +703,7 @@ setup_stack (void **esp)
   return true;
 }
 
+/* Get the open file specified by fd from the current thread's list of open files. */
 struct file* 
 process_get_file(int fd) 
 {
@@ -708,6 +718,7 @@ process_get_file(int fd)
   return NULL;
 }
 
+/* Compare the fd value of two open files. */
 static bool
 compare_files (const struct list_elem *a, const struct list_elem *b,
                void *aux UNUSED)
@@ -717,6 +728,7 @@ compare_files (const struct list_elem *a, const struct list_elem *b,
   return fa->fd < fb->fd;
 }
 
+/* Open file with the given filename and add it to current thread's list of open files. */
 int
 process_open_file (const char *file_name)
 {
@@ -744,6 +756,7 @@ process_open_file (const char *file_name)
   return fd;
 }
 
+/* Close the file specified by fd in the current thread's list of open files. */
 void
 process_close_file (int fd)
 {

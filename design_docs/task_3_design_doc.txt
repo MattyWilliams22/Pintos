@@ -167,7 +167,7 @@ zero, the page could be unshared.
 
 We have used a lock called the frame_table_lock to avoid race conditions.
 Before accessing the frame table, we always acquire the lock and then release it
-once a thread is done reading/modifying the table. A process must call make_present 
+once a thread is done reading/modifying the table. A process must call load_page 
 which acquires the lock before allocating any frames. It only releases the lock once this 
 finishes so no race conditions exist. 
 
@@ -225,7 +225,7 @@ deadlock does not occur.
 >> How do you ensure that Q cannot access or modify the page during the 
 >> eviction process?
 
-A page fault in P would call make_present. This locks the frame table and P's page table. 
+A page fault in P would call load_page. This locks the frame table and P's page table. 
 If Q's page is evicted, we can get Q's page table as it is stored in the frame struct. 
 We update Q's page directory and then swap out the page. During this, the page fault handler 
 waits for Q's page table lock so Q's page can't be accessed during the swap.

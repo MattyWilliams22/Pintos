@@ -113,7 +113,7 @@ main (void)
   kbd_init ();
   input_init ();
 #ifdef USERPROG
-  filesystem_lock_init ();
+  init_filesystem_lock ();
   exception_init ();
   syscall_init ();
 #endif

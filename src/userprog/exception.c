@@ -161,7 +161,7 @@ page_fault (struct intr_frame *f)
       {
         if (already_mapped (pt, page))
         {
-          if (!make_present (pt, page))
+          if (!load_page (pt, page))
             thread_exit ();
           return;
         }
@@ -179,7 +179,7 @@ page_fault (struct intr_frame *f)
         /* Handle stack growth. */
         if (is_stack_growth)
         {
-          if (!create_zero_page (pt, page, true) || !make_present (pt, page))
+          if (!create_zero_page (pt, page, true) || !load_page (pt, page))
             thread_exit ();
           return;
         }

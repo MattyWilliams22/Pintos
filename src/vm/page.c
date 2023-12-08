@@ -17,32 +17,32 @@ static bool compare_pages (const struct hash_elem *elem_a,
                            const struct hash_elem *elem_b, void *aux);
 static unsigned hash_page (const struct hash_elem *elem, void *aux);
 static void remove_page (struct hash_elem *elem, void *aux);
-static struct page *search_pt (struct page_table *pt, void *user_addr);
-static struct page *get_page (struct page_table *page_table, 
-                              void *key, bool create);
+static struct page *search_pt (struct page_table *pt, void *uaddr);
+static struct page *make_page (struct page_table *page_table, 
+                              void *uaddr, bool init);
 static void swap_page_in (struct page *p, struct frame *frame);
 static void swap_page_out (struct page *p, bool dirty);
-static void page_destroy (struct page *p, bool dirty);
+static void destroy_page (struct page *p, bool dirty);
 
-/* Compare hash key of two pages. */
+/* Compare the hash uaddr of two pages. */
 static bool
 compare_pages (const struct hash_elem *elem_a, const struct hash_elem *elem_b,
             void *aux UNUSED)
 {
   const struct page *page_a = hash_entry (elem_a, struct page, elem);
   const struct page *page_b = hash_entry (elem_b, struct page, elem);
-  return page_a->key < page_b->key;
+  return page_a->uaddr < page_b->uaddr;
 }
 
-/* Calculates hash from hash key. */
+/* Calculates the hash of a page. */
 static unsigned
 hash_page (const struct hash_elem *elem, void *aux UNUSED)
 {
   const struct page *p = hash_entry (elem, struct page, elem);
-  return hash_bytes (&p->key, sizeof(p->key));
+  return hash_bytes (&p->uaddr, sizeof(p->uaddr));
 }
 
-/* Initializes supplemental page table. */
+/* Initialises supplemental page table. */
 bool
 init_pt (struct page_table *page_table)
 {
@@ -60,6 +60,7 @@ init_pt (struct page_table *page_table)
   return true;
 }
 
+/* Removes a page from the supplemental page table and frees the page. */
 static void
 remove_page (struct hash_elem *elem, void *aux UNUSED) 
 {
@@ -69,17 +70,18 @@ remove_page (struct hash_elem *elem, void *aux UNUSED)
   bool present_status = page->present;
   bool dirty = false;
   if (present_status)
-    dirty = pagedir_is_dirty (pd, page->key);
-  page_destroy (page, dirty);
+    dirty = pagedir_is_dirty (pd, page->uaddr);
+  destroy_page (page, dirty);
   if (present_status)
     free_frame (page->frame);
   free (page);
 }
 
+/* Frees the supplemental page table and the pages stored within it. */
 void
 free_pt (struct page_table *page_table)
 {
-  /* Always acquire locks in this order to avaoid deadlock. */
+  /* Always acquire locks in this order to avoid deadlock. */
   acquire_frame_table_lock ();
   lock_acquire (&page_table->lock);
 
@@ -90,8 +92,10 @@ free_pt (struct page_table *page_table)
     pagedir_activate (NULL);
   }
 
+  /* Destroy the hash table. */
   hash_destroy(&page_table->spt, remove_page);
 
+  /* Ensure the page directory is wiped. */
   if (page_dir != NULL)
   {
     pagedir_destroy (page_dir);
@@ -101,73 +105,81 @@ free_pt (struct page_table *page_table)
   lock_destroy (&page_table->lock);
 }
 
+/* Find the page with the given user address in the page table. */
 static struct page *
-search_pt (struct page_table *pt, void *user_addr)
+search_pt (struct page_table *pt, void *uaddr)
 {
-  struct hash_elem *e = hash_find (&pt->spt, &(struct page){ .key = user_addr }.elem);
+  struct hash_elem *e = hash_find (&pt->spt, &(struct page){ .uaddr = uaddr }.elem);
   return e != NULL ? hash_entry (e, struct page, elem) : NULL;
 }
 
+/* Makes a new page at the given user address, 
+   freeing any page currently at that address. */
 static struct page *
-get_page (struct page_table *page_table, void *key, bool create)
+make_page (struct page_table *page_table, void *uaddr, bool init)
 {
-  bool ft_locked = curr_has_ft_lock ();
+  /* Search for a page at the given user address in the page table. */
+  struct page *page = search_pt (page_table, uaddr);
 
-  struct page *page = search_pt (page_table, key);
-
+  /* Check if a page was found with the given user address. */
   if (page == NULL)
   {
-    if (!create)
+    if (!init)
       return NULL;
-
-    struct page *res = malloc (sizeof (struct page));
-    if (res == NULL)
+    
+    /* Initialise a new page. */
+    struct page *new_page = malloc (sizeof (struct page));
+    if (new_page == NULL)
       return NULL;
-
-    res->key = key;
-    hash_insert (&page_table->spt, &res->elem);
-    return res;
+    
+    /* Add the new page to the supplemental page table. */
+    new_page->uaddr = uaddr;
+    hash_insert (&page_table->spt, &new_page->elem);
+    return new_page;
   }
 
-  if (page->present && !ft_locked)
+  if (page->present && !curr_has_ft_lock())
   {
     lock_release (&page_table->lock);
+    /* Must acquire locks in the same order to avoid deadlock. */
     acquire_frame_table_lock ();
     lock_acquire (&page_table->lock);
 
-    struct page *res = get_page (page_table, key, create);
+    struct page *new_page = make_page (page_table, uaddr, init);
 
     release_frame_table_lock ();
-    return res;
+    return new_page;
   }
 
+  /* Remove the page from the frame table and the page directory. */
   bool present_status = page->present;
   bool dirty = false;
   if (present_status)
   {
-    pagedir_clear_page (page_table->pd, key);
-    dirty = pagedir_is_dirty (page_table->pd, key);
+    pagedir_clear_page (page_table->pd, uaddr);
+    dirty = pagedir_is_dirty (page_table->pd, uaddr);
   }
-  page_destroy (page, dirty);
+  destroy_page (page, dirty);
   if (present_status)
     free_frame (page->frame);
   return page;
 }
 
+/* Creates a new file page and adds it to the page table. */
 bool
-create_file_page (struct page_table *page_table, void *user_page, struct file *id, off_t offset,
+create_file_page (struct page_table *page_table, void *uaddr, struct file *id, off_t offset,
                    uint32_t length, bool writable, bool write_back)
 {
   lock_acquire (&page_table->lock);
 
-  struct page *page = get_page (page_table, user_page, true);
+  struct page *page = make_page (page_table, uaddr, true);
   if (page == NULL)
   {
     lock_release (&page_table->lock);
     return false;
   }
 
-  page->key = user_page;
+  page->uaddr = uaddr;
   page->file = id;
   page->offset = offset;
   page->writable = writable;
@@ -181,19 +193,20 @@ create_file_page (struct page_table *page_table, void *user_page, struct file *i
   return true;
 }
 
+/* Creates a new zero page and adds it to the page table. */
 bool
-create_zero_page (struct page_table *page_table, void *user_addr, bool writable)
+create_zero_page (struct page_table *page_table, void *uaddr, bool writable)
 {
   lock_acquire (&page_table->lock);
 
-  struct page *page = get_page(page_table, user_addr, true);
+  struct page *page = make_page(page_table, uaddr, true);
   if (page == NULL)
   {
     lock_release (&page_table->lock);
     return false;
   }
 
-  page->key = user_addr;
+  page->uaddr = uaddr;
   page->present = false;
   page->type = ZERO;
   page->writable = writable;
@@ -203,12 +216,13 @@ create_zero_page (struct page_table *page_table, void *user_addr, bool writable)
   return true;
 }
 
+/* Deletes the page at the given user address from the page table. */
 bool
-delete_page (struct page_table *page_table, void *user_addr)
+delete_page (struct page_table *page_table, void *uaddr)
 {
   lock_acquire (&page_table->lock);
 
-  struct page *page = get_page (page_table, user_addr, false);
+  struct page *page = make_page (page_table, uaddr, false);
   if (page == NULL)
   {
     lock_release (&page_table->lock);
@@ -223,47 +237,54 @@ delete_page (struct page_table *page_table, void *user_addr)
   return true;
 }
 
-/* Returns true if the page at address user_page is free to use. */
+/* Returns true if the page at the given user address is free to use. */
 bool
-available_page (struct page_table *page_table, void *user_page) {
-  return is_user_vaddr (user_page) && !already_mapped (page_table, user_page)
-    && !in_stack (user_page);
+available_page (struct page_table *page_table, void *uaddr) {
+  return is_user_vaddr (uaddr) && !already_mapped (page_table, uaddr)
+    && !in_stack (uaddr);
 }
 
+/* Activates the page table. */
 void
 activate_pt (struct page_table *page_table)
 {
   pagedir_activate (page_table->pd);
 }
 
+/* Returns true if there is already a page with address uaddr. */
 bool
-already_mapped (struct page_table *page_table, void *user_page)
+already_mapped (struct page_table *page_table, void *uaddr)
 {
   lock_acquire (&page_table->lock);
-  struct page *page = search_pt (page_table, user_page);
+  struct page *page = search_pt (page_table, uaddr);
   lock_release (&page_table->lock);
   return page != NULL;
 }
 
+/* Returns true if uaddr is within the stack. */
 bool
-in_stack (void *user_page)
+in_stack (void *uaddr)
 {
-  return (user_page < PHYS_BASE) && (PHYS_BASE - STACK_LIMIT <= user_page);
+  return (uaddr < PHYS_BASE) && (PHYS_BASE - STACK_LIMIT <= uaddr);
 }
 
+/* Makes the page at uaddr in the page table present so that it can be accessed. */
 bool
-make_present (struct page_table *pt, void *user_page)
+load_page (struct page_table *pt, void *uaddr)
 {
   acquire_frame_table_lock ();
   lock_acquire (&pt->lock);
 
-  struct page *page = search_pt (pt, user_page);
+  /* Ensure page is in the page table, if not return false. */
+  struct page *page = search_pt (pt, uaddr);
   if (page == NULL)
   {
     release_frame_table_lock ();
     lock_release (&pt->lock);
     return false;
   }
+
+  /* If the page is already present, return true. */
   if (page->present)
   {
     release_frame_table_lock ();
@@ -271,6 +292,7 @@ make_present (struct page_table *pt, void *user_page)
     return true;
   }
 
+  /* Allocate a new frame for this page. */
   struct frame *frame = allocate_frame (false);
   if (frame == NULL)
   {
@@ -279,6 +301,7 @@ make_present (struct page_table *pt, void *user_page)
     return false;
   }
 
+  /* Initialise values for the frame, evicting the previous frame if necessary. */
   if (frame->pt != NULL)
   {
     struct page_table *old_pt = frame->pt;
@@ -287,17 +310,17 @@ make_present (struct page_table *pt, void *user_page)
     if (old_pt != pt)
       lock_acquire (&old_pt->lock);
 
-    struct page *eviction_page = search_pt (old_pt, old_user_page);
+    struct page *evicted_page = search_pt (old_pt, old_user_page);
 
     frame->pt = pt;
-    frame->page_user_addr = user_page;
+    frame->page_user_addr = uaddr;
 
     release_frame_table_lock ();
 
     pagedir_clear_page (old_pt->pd, old_user_page);
     bool dirty = pagedir_is_dirty (old_pt->pd, old_user_page);
 
-    swap_page_out (eviction_page, dirty);
+    swap_page_out (evicted_page, dirty);
 
     if (old_pt != pt)
       lock_release (&old_pt->lock);
@@ -305,21 +328,22 @@ make_present (struct page_table *pt, void *user_page)
   else
   {
     frame->pt = pt;
-    frame->page_user_addr = user_page;
+    frame->page_user_addr = uaddr;
 
     release_frame_table_lock ();
   }
 
+  /* Swap the page into the frame and set dirty and accessed bits to false. */
   swap_page_in (page, frame);
-
-  pagedir_set_page (pt->pd, user_page, frame->page_phys_addr, page->writable);
-  pagedir_set_dirty (pt->pd, user_page, false);
-  pagedir_set_accessed (pt->pd, user_page, false);
+  pagedir_set_page (pt->pd, uaddr, frame->page_phys_addr, page->writable);
+  pagedir_set_dirty (pt->pd, uaddr, false);
+  pagedir_set_accessed (pt->pd, uaddr, false);
 
   lock_release (&pt->lock);
   return true;
 }
 
+/* Load data from the page's address and set present to true. */
 static void
 swap_page_in (struct page *p, struct frame *frame)
 {
@@ -345,6 +369,7 @@ swap_page_in (struct page *p, struct frame *frame)
   }
 }
 
+/* Save page's data and set present to false. */
 static void
 swap_page_out (struct page *p, bool dirty)
 {
@@ -381,8 +406,9 @@ swap_page_out (struct page *p, bool dirty)
   }
 }
 
+/* Frees all data saved by a page. */
 static void
-page_destroy (struct page *p, bool dirty)
+destroy_page (struct page *p, bool dirty)
 {
   switch (p->type)
   {

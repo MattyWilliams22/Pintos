@@ -14,6 +14,7 @@ struct list frame_table;
 /* Lock used to control access to the frame table. */
 struct lock frame_table_lock;
 
+/* Initialises frame table. */
 void 
 init_frame_table (void) 
 {
@@ -21,21 +22,26 @@ init_frame_table (void)
   list_init(&frame_table);
 }
 
+/* Locks the frame table. */
 void
 acquire_frame_table_lock (void)
 {
   lock_acquire(&frame_table_lock);
 }
 
+/* Unlocks the frame table. */
 void
 release_frame_table_lock (void)
 {
   lock_release(&frame_table_lock);
 }
 
+/* Allocates a frame to the frame table. */
 struct frame *
 allocate_frame (bool pinned) 
 {
+  ASSERT (curr_has_ft_lock());
+
   void *page_phys_addr = palloc_get_page(PAL_USER);
   if (page_phys_addr == NULL)
   {
@@ -57,9 +63,12 @@ allocate_frame (bool pinned)
   return to_add;
 }
 
+/* Frees a frame and removes it from the frame table. */
 void
 free_frame (struct frame *frame)
 {
+  ASSERT (curr_has_ft_lock());
+
   list_remove (&frame->elem);
   palloc_free_page (frame->page_phys_addr);
   free (frame);
@@ -68,12 +77,13 @@ free_frame (struct frame *frame)
 struct frame *
 find_frame_to_evict (void)
 {
+  ASSERT (curr_has_ft_lock());
+
   size_t size = list_size (&frame_table);
   ASSERT (size > 0);
 
-  // Second chance algorithm
+  /* Iterate through frame table until a frame is found to evict. */
   struct list_elem *e = list_begin (&frame_table);
-
   while (true)
   {
     if (e == list_end (&frame_table))
@@ -81,6 +91,7 @@ find_frame_to_evict (void)
 
     struct frame *frame = list_entry (e, struct frame, elem);
 
+    /* Pinned frames cannot be evicted from the frame table. */
     if (!frame->pinned)
     {
       if (!pagedir_is_accessed (frame->pt->pd, frame->page_user_addr))
@@ -93,6 +104,7 @@ find_frame_to_evict (void)
   }
 }
 
+/* Returns true if the current thread owns the frame table lock. */
 bool
 curr_has_ft_lock (void)
 {
