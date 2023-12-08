@@ -99,8 +99,8 @@ struct thread
   int nice;                           /* Niceness. */
   fixed_point_t recent_cpu;           /* Recent CPU value for BSD Scheduler. */
   struct list_elem allelem;           /* List element for all threads list. */
-  struct list owned_locks;
-  struct lock *required_lock;
+  struct list owned_locks;            /* List of locks owned by thread. */
+  struct lock *required_lock;         /* Lock that is required by this thread. */
   
   /* Shared between thread.c and synch.c. */
   struct list_elem elem;              /* List element. */
@@ -109,12 +109,12 @@ struct thread
    /* Owned by userprog/process.c. */
    struct list open_files;             /* List of files open. */
    struct child_bond *child_bond;      /* Pointer to personal bond. */
-   struct list child_bonds;            /* List of childrens bonds. */
-   struct file *exec_file;             /* Current executable file */
-   struct page_table page_table;
-   struct list mapped_files;
-   void *esp;
-   bool is_user;
+   struct list child_bonds;            /* List of children's bonds. */
+   struct file *exec_file;             /* Current executable file. */
+   struct page_table page_table;       /* Supplemental page table. */
+   struct list mapped_files;           /* List of memory mapped files. */
+   void *esp;                          /* User stack pointer. */
+   bool is_user;                       /* User process flag. */
 #endif
 
   /* Owned by thread.c. */
